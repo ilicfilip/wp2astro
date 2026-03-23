@@ -315,6 +315,18 @@ async function bootEditor() {
       data: page.content,
     });
   }
+  // Write images into the virtual FS so the importer can find them
+  for (const img of existingContent.images) {
+    if (img.base64) {
+      steps.push({
+        step: 'runPHP',
+        code: `<?php
+          $data = base64_decode('${img.base64}');
+          file_put_contents('/wordpress/wp-content/astro-images/${img.name}', $data);
+        ?>`,
+      });
+    }
+  }
 
   // Activate plugin and configure WP
   steps.push(

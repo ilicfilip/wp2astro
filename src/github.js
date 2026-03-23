@@ -116,13 +116,22 @@ export async function fetchContent(owner, repo) {
     if (e.status !== 404) throw e;
   }
 
-  // Fetch image file list (don't download binary content yet)
+  // Fetch images with binary content (base64)
   try {
     const { data: imgFiles } = await octokit.rest.repos.getContent({
       owner, repo, path: 'public/assets/images',
     });
     for (const file of imgFiles) {
-      result.images.push({ name: file.name, sha: file.sha, download_url: file.download_url });
+      if (file.type !== 'file' || file.name === '.gitkeep') continue;
+      // Fetch individual file to get base64 content
+      const { data: imgData } = await octokit.rest.repos.getContent({
+        owner, repo, path: file.path,
+      });
+      result.images.push({
+        name: file.name,
+        sha: file.sha,
+        base64: imgData.content.replace(/\n/g, ''), // GitHub returns base64 with newlines
+      });
     }
   } catch (e) {
     if (e.status !== 404) throw e;
