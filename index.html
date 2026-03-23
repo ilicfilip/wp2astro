@@ -1,0 +1,130 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>Astro WP — Browser CMS</title>
+  <link rel="stylesheet" href="/src/style.css" />
+</head>
+<body>
+  <!-- ── Auth Screen ───────────────────────────────────── -->
+  <div id="auth-screen" class="screen" style="display:none">
+    <div class="setup-card auth-card">
+      <div class="setup-header">
+        <h1>WP2Astro</h1>
+        <p class="subtitle">Enter password to continue.</p>
+      </div>
+      <div class="setup-steps">
+        <div class="setup-section" style="border-top:none;margin-top:0;padding-top:0.5rem;">
+          <div class="input-row">
+            <input type="password" id="auth-password" placeholder="Password" autocomplete="off" />
+            <button id="auth-submit" class="btn btn-primary">Enter</button>
+          </div>
+          <span id="auth-status" class="status"></span>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <!-- ── Setup Screen ──────────────────────────────────── -->
+  <div id="setup-screen" class="screen" style="display:none">
+    <div class="setup-card">
+      <div class="setup-header">
+        <h1>Astro WP</h1>
+        <p class="subtitle">Edit with WordPress. Deploy with Astro. No servers.</p>
+      </div>
+
+      <div class="setup-steps">
+        <!-- Step 1: GitHub PAT -->
+        <div class="setup-section">
+          <div class="step-header">
+            <span class="step-num"></span>
+            <h2>Connect GitHub</h2>
+          </div>
+          <p>Create a <a href="https://github.com/settings/tokens/new?scopes=repo&description=Astro+WP+CMS" target="_blank">Personal Access Token</a> with <code>repo</code> scope.</p>
+          <div class="input-row">
+            <input type="password" id="pat-input" placeholder="ghp_xxxxxxxxxxxxxxxxxxxx" autocomplete="off" />
+            <button id="pat-connect" class="btn" disabled>Connect</button>
+          </div>
+          <span id="pat-status" class="status"></span>
+        </div>
+
+        <!-- Step 2: Repo -->
+        <div class="setup-section" id="repo-section" style="display:none">
+          <div class="step-header">
+            <span class="step-num"></span>
+            <h2>Select Repository</h2>
+            <span class="info-tip" data-tip="A new repo will be created in your personal GitHub account (not in an organization). A Cloudflare Pages project with the same name will also be created when you configure deploy — choose a unique name.">i</span>
+          </div>
+          <select id="repo-select">
+            <option value="">Loading repositories...</option>
+          </select>
+          <span class="or-divider">or</span>
+          <div class="input-row">
+            <input type="text" id="new-repo-name" placeholder="my-astro-site" />
+            <button id="create-repo" class="btn btn-secondary">Create New</button>
+          </div>
+        </div>
+
+        <!-- Step 3: Cloudflare -->
+        <div class="setup-section" id="cf-section" style="display:none">
+          <div class="step-header">
+            <span class="step-num"></span>
+            <h2>Auto-Deploy</h2>
+            <span class="optional-badge">optional</span>
+            <span class="info-tip" data-tip="A Cloudflare Pages project matching your repo name will be created automatically. If that name already exists, a suffix may be added. Create an API token with 'Cloudflare Pages: Edit' permission.">i</span>
+          </div>
+          <p>Connect <a href="https://dash.cloudflare.com/profile/api-tokens" target="_blank">Cloudflare</a> to auto-deploy your site on every sync.</p>
+          <input type="text" id="cf-account-id" placeholder="Cloudflare Account ID" autocomplete="off" />
+          <input type="password" id="cf-api-token" placeholder="Cloudflare API Token" autocomplete="off" />
+          <div class="btn-row">
+            <button id="cf-save" class="btn btn-secondary">Save Deploy Keys</button>
+            <a href="#" id="cf-skip" class="skip-link">Skip for now</a>
+          </div>
+          <span id="cf-status" class="status"></span>
+        </div>
+
+        <!-- Step 4: Launch -->
+        <div class="setup-section" id="launch-section" style="display:none">
+          <div class="step-header">
+            <span class="step-num"></span>
+            <h2>Launch Editor</h2>
+          </div>
+          <p id="repo-info"></p>
+          <button id="launch-btn" class="btn btn-primary">Launch WordPress Editor</button>
+        </div>
+      </div>
+
+      <div class="setup-footer">
+        <a href="#" id="reset-session" class="reset-link">Reset session</a>
+      </div>
+    </div>
+  </div>
+
+  <!-- ── Editor Screen ─────────────────────────────────── -->
+  <div id="editor-screen" class="screen" style="display:none">
+    <header id="editor-header">
+      <div class="header-left">
+        <strong>Astro WP</strong>
+        <span id="editor-repo-name" class="repo-badge"></span>
+      </div>
+      <div class="header-right">
+        <span id="sync-status" class="status">Ready</span>
+        <button id="sync-btn" class="btn btn-small">Sync All</button>
+        <button id="back-btn" class="btn btn-small btn-secondary">← Back</button>
+      </div>
+    </header>
+
+    <div id="loading-overlay">
+      <div class="loader">
+        <div class="spinner"></div>
+        <p id="loading-message">Starting WordPress Playground...</p>
+      </div>
+    </div>
+
+    <iframe id="wp-playground" style="display:none"></iframe>
+  </div>
+
+  <script type="module" src="/src/main.js"></script>
+</body>
+</html>

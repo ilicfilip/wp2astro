@@ -1,0 +1,21 @@
+{
+  "name": "astro-wp-web-app",
+  "version": "0.1.0",
+  "type": "module",
+  "description": "Browser-based CMS: WordPress Playground + GitHub + Cloudflare Pages",
+  "scripts": {
+    "dev": "vite",
+    "build": "vite build",
+    "preview": "vite preview"
+  },
+  "dependencies": {
+    "@wp-playground/client": "^0.9.0",
+    "blakejs": "^1.2.1",
+    "octokit": "^4.0.0",
+    "tweetnacl": "^1.0.3",
+    "tweetnacl-util": "^0.15.1"
+  },
+  "devDependencies": {
+    "vite": "^6.0.0"
+  }
+}
