@@ -67,7 +67,7 @@ See [docs/architecture.md](docs/architecture.md) for the full technical document
 
 WordPress exporter PHP (HTML→Markdown, import, etc.) lives in **`php-classes/`** and is inlined at build time by `vite-plugin-php-inline.js`; you do not need a separate checkout for a successful build.
 
-**Navigation & preview:** Playground boots with a minimal **classic** theme (**WP2Astro Preview**) so **Appearance → Menus** works and the WordPress **front-end** is a simple, separate preview from the Astro build. Use **View site** in the editor toolbar to open `/` in the iframe, and **Menus** for `/wp-admin/nav-menus.php` (no address bar in the embedded view). Configure **classic** menus for export; sync still writes **`src/data/menu.json`** for the static site. No CI workflow changes are required.
+**Navigation & preview:** Playground boots with a minimal **classic** theme (**WP2Astro Preview**) so **Appearance → Menus** is available. Menus saved in GitHub (`src/data/menu.json`) are automatically recreated in WordPress on boot — no need to rebuild them each session. Menu sync includes link target (`_blank`, etc.) and title attributes. **View site** in the editor toolbar opens the live Astro site in a new tab (disabled until the first deploy completes). **Menus** opens `/wp-admin/nav-menus.php` in the iframe. After sync, the status bar polls the GitHub Deployments API and shows real-time deploy progress.
 
 ## Related
 

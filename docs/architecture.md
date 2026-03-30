@@ -49,7 +49,7 @@ Entry point. Two screens: setup and editor.
 - "Reset session" link at the bottom clears `sessionStorage` and reloads the page
 
 **Editor screen** layout:
-- Dark header bar with repo name badge, sync status, **View site** (`goTo('/')` — WordPress front-end preview; differs from the Astro static site), **Menus** (`goTo('/wp-admin/nav-menus.php')` — there is no address bar), "Sync All" button, and "Back" button
+- Dark header bar with repo name badge, sync status, **View site** (opens the live Astro site in a new tab; disabled until a deploy URL is available), **Menus** (`goTo('/wp-admin/nav-menus.php')` — there is no address bar), "Sync All" button, and "Back" button
 - Loading overlay with spinner (shown while WP Playground boots)
 - Full-height iframe for WP Playground
 
@@ -67,7 +67,8 @@ Main application logic. Key responsibilities:
 - Fetches existing content from GitHub via `github.fetchContent()` (posts, pages, images, optional `src/data/menu.json`)
 - Seeds `contentManifest` from fetched content (path → git blob SHA) so deletions can be detected on first sync
 - Sets `contentManifest._templatePushed = true` if content already exists
-- Builds WP Playground Blueprint with: mkdir steps, **preview theme** files, plugin files, PHP class files, existing content `.md` files, plugin activation, **theme activation** (`wp2astro-preview`), WP config, and content import via `Astro_MD_Importer`
+- Builds WP Playground Blueprint with: mkdir steps, **preview theme** files (including pre-made screenshot via base64 decode), plugin files, PHP class files, existing content `.md` files, plugin activation, **theme activation** (`wp2astro-preview` via `runPHP`/`switch_theme()`), WP config, content import via `Astro_MD_Importer`, and **menu import** from `menu.json` (recreates nav menu items with labels, hrefs, targets, title attributes, and nested children; assigns to theme locations)
+- After Playground is ready, fetches the deploy URL from GitHub Deployments API and enables the **View site** button if available
 
 **Sync flow (`syncToGitHub()`):**
 1. Fetches posts, pages, images, and **menu** from WP via REST API (`playgroundClient.request()`)
@@ -75,13 +76,13 @@ Main application logic. Key responsibilities:
 3. Detects deletions — paths in `contentManifest` (under `src/content/blog/`, `src/content/pages/`, `public/assets/images/`) that are not present in WP's current content (`menu.json` is not deleted by this logic)
 4. Commits all additions + deletions in a single GraphQL `createCommitOnBranch` mutation
 5. Updates manifest (add new hashes, remove deleted paths)
-6. Queries GitHub Deployments API for the real CF Pages URL and displays it as a clickable link
+6. Shows "Waiting for deploy..." and polls GitHub Deployments API via `waitForDeploy()` until the deployment reaches a terminal state (success/failure/timeout). On success, enables the **View site** button and displays the live URL as a clickable link
 
 **State:**
 - `selectedRepo` — `{ owner, name, full_name }`
 - `playgroundClient` — WP Playground client instance
 - `contentManifest` — `{ path: hash }` map tracking what's in GitHub. Seeded from `fetchContent()` on boot, updated after each sync. Internal keys prefixed with `_` (e.g., `_templatePushed`) are skipped during deletion detection.
-- `cfPagesUrl` — the real Cloudflare Pages URL, persisted in `sessionStorage`
+- `cfPagesUrl` — the real Cloudflare Pages URL, persisted in `sessionStorage`. Fetched on boot from GitHub Deployments API (catches deploys from previous sessions) and updated after each sync via deploy polling
 
 ### `src/github.js`
 GitHub API wrapper using Octokit. Key functions:
@@ -92,6 +93,7 @@ GitHub API wrapper using Octokit. Key functions:
 - `commitFiles(owner, repo, branch, files, message, deletePaths=[])` — **Uses GraphQL `createCommitOnBranch` mutation**. HEAD OID fetched via GraphQL (not REST — avoids stale cache). `files` is `{ path: content }` for additions. `deletePaths` is `string[]` of paths to delete. Both are passed in `fileChanges: { additions, deletions }`.
 - `setRepoSecret(owner, repo, name, value)` — Encrypt with NaCl sealed box, set via Actions secrets API
 - `getDeploymentUrl(owner, repo)` — Searches recent GitHub Deployments for any with a `.pages.dev` URL. Strips per-commit hash prefix (e.g., `abc123.my-site.pages.dev` → `my-site.pages.dev`). Returns the production URL or `null`.
+- `waitForDeploy(owner, repo, afterTimestamp, onStatus, opts)` — Polls GitHub Deployments API for a deployment created after `afterTimestamp`. Calls `onStatus(state, url)` on each poll (`pending`/`in_progress`/`success`/`failure`/`error`/`timeout`). Returns `{ state, url }`. Default interval: 8s, timeout: 5 min.
 
 ### `src/plugin.js`
 WP plugin PHP code as JS string exports:
@@ -101,7 +103,7 @@ WP plugin PHP code as JS string exports:
   - `GET /astro-export/v1/pages` — Same for pages
   - `GET /astro-export/v1/images` — Images as base64 with metadata
   - `GET /astro-export/v1/manifest` — `{path: md5hash}` for change detection (includes `src/data/menu.json`)
-  - `GET /astro-export/v1/menu` — Nav menus by theme location: `{ locations: { primary: [...], ... }, hash }`. Tree nodes: `label`, `href`, optional nested `children`. Internal URLs normalized to site-relative paths; external links unchanged.
+  - `GET /astro-export/v1/menu` — Nav menus by theme location: `{ locations: { primary: [...], ... }, hash }`. Tree nodes: `label`, `href`, optional `target` (e.g. `_blank`), optional `title` (title attribute), optional nested `children`. Internal URLs normalized to site-relative paths (Playground `/scope:*` prefixes are stripped); external links unchanged.
   - `GET /astro-export/v1/post/{id}` and `/page/{id}` — Single item
 - `getPluginFiles()` — Returns `{ virtualPath: phpContent }` map for Blueprint writeFile steps. Only includes the main plugin file and REST API class; core PHP classes are written separately via `getCorePHPSteps()` in main.js.
 
@@ -121,8 +123,8 @@ WP plugin PHP code as JS string exports:
 
 **Site navigation (`src/data/menu.json` + components):**
 - Committed JSON shape: `{ "locations": { "primary": [...], ... } }`. Sync writes pretty-printed JSON; the REST `hash` is derived from WordPress’s compact JSON of the same structure.
-- `NavMenu.astro` — Recursive list for nested items; submenus use hover dropdown styles in the layout.
-- **WordPress:** Use **Appearance → Menus**. Assign the menu to your theme’s primary (or header) **location** when available; if no location is assigned, the exporter uses the **first** menu as `primary`. Classic menus only — not the block-only Navigation block in isolation.
+- `NavMenu.astro` — Recursive list for nested items; renders `target` and `title` attributes on links when present. Submenus use hover dropdown styles in the layout.
+- **WordPress:** Use **Appearance → Menus**. Assign the menu to your theme’s primary (or header) **location** when available; if no location is assigned, the exporter uses the **first** menu as `primary`. Classic menus only — not the block-only Navigation block in isolation. Menu items support link target (`_blank`, etc.) and title attribute fields.
 
 **Layouts:**
 - `BaseLayout.astro` — Imports `../data/menu.json`. If `locations.primary` (or the first non-empty location) has items, the header nav uses **WordPress**. Otherwise it falls back to **Home**, **Blog**, and links derived from the `pages` collection (previous behavior). Dark gradient header (`#1a1a2e` → `#2d2b55` → `#3d3580`), sticky nav, warm off-white body (`#faf9f7`), dark footer. Global styles defined in `<style is:global>`.
@@ -145,7 +147,7 @@ See "Deploy Workflow & Site URL Resolution" section for full details.
 - `src/data/menu.json` — Default `{ "locations": { "primary": [] } }` until the first menu sync overwrites it
 
 ### `src/wp-theme.js`
-Minimal **classic** theme **`wp2astro-preview`** (written into Playground at `/wordpress/wp-content/themes/wp2astro-preview/`). Exported via `getWp2AstroPreviewThemeFiles()` and activated with a Blueprint **`runPHP`** step that calls `switch_theme()` using `WP_CONTENT_DIR` (same `/wordpress/` layout as other steps — the stock `activateTheme` step keys off `documentRoot` and can miss the theme path in some Playground builds). Registers a single **`primary`** menu location so **Appearance → Menus** is available. Includes simple `index.php`, `single.php`, `page.php`, `header.php`, `footer.php`, and a short footer note that the public site is Astro. Not committed to the user’s GitHub Astro repo — only lives in the Playground VM.
+Minimal **classic** theme **`wp2astro-preview`** (written into Playground at `/wordpress/wp-content/themes/wp2astro-preview/`). Exported via `getWp2AstroPreviewThemeFiles()` and activated with a Blueprint **`runPHP`** step that calls `switch_theme()` using `WP_CONTENT_DIR` (same `/wordpress/` layout as other steps — the stock `activateTheme` step keys off `documentRoot` and can miss the theme path in some Playground builds). Registers a single **`primary`** menu location so **Appearance → Menus** is available. Includes simple `index.php`, `single.php`, `page.php`, `header.php`, `footer.php`, and a short footer note that the public site is Astro. A pre-made `screenshot.png` is embedded as base64 in `src/assets/theme-screenshot-b64.js` and written via a `runPHP` step (`getWp2AstroPreviewScreenshotStep()`). Not committed to the user’s GitHub Astro repo — only lives in the Playground VM.
 
 ### `src/style.css`
 Styles organized by section:
@@ -187,7 +189,7 @@ Loads `phpInlinePlugin()` with defaults (`php-classes/`). Pass `{ phpDir: '...' 
 5. On first sync, also includes Astro template/scaffold files (excluding `.github/` workflows)
 6. Commits all additions AND deletions in a single GraphQL `createCommitOnBranch` mutation (uses `fileChanges: { additions, deletions }`)
 7. Updates local manifest — adds new hashes, removes deleted paths (including `src/data/menu.json`’s hash from the menu endpoint)
-8. Queries GitHub Deployments API for the real CF Pages URL and displays it
+8. Polls GitHub Deployments API (`waitForDeploy()`) until the deployment created after the commit reaches a terminal state. Shows real-time status ("Waiting for deploy..." → "Deployed — URL")
 
 **CI:** No workflow changes are required for `menu.json` — `npm run build` picks it up like any other committed file under `src/`.
 
@@ -289,6 +291,7 @@ This applies to: `[...slug].astro` (both blog and pages), `index.astro` (home pa
 - The `--create-project` flag does not exist in wrangler v3 — project must be created via the CF API before deploying
 - wrangler-action v3 is pinned; v4's flags differ
 - The `deployment-url` output from wrangler-action is a per-commit preview URL (e.g., `abc123.my-site.pages.dev`), not the production URL — must be stripped
+- **Shell quoting in `-d` JSON**: the curl commands that create GitHub Deployments must use single-quoted JSON (`-d '{"ref":"main",...}'`). Double-quoted strings with escaped inner quotes (`-d "{\"ref\":\"main\"}"`) break because bash strips the escaping, producing invalid JSON and silently failing to create deployment statuses
 
 ### WP Playground Quirks
 - `writeFile` Blueprint step does NOT auto-create parent directories. Must use `mkdir` steps first.
@@ -298,6 +301,10 @@ This applies to: `[...slug].astro` (both blog and pages), `index.astro` (home pa
 ### Content Import on Boot
 - The plugin's `mainPlugin` must `require_once` both `class-md-to-blocks.php` and `class-md-importer.php` for the importer to work. These were originally missing and the import silently failed because `class_exists('Astro_MD_Importer')` returned false.
 - Existing content is fetched from GitHub, written to WP Playground's virtual filesystem, then imported into WP via the `Astro_MD_Importer` class in a `runPHP` Blueprint step.
+- **Nav menus** from `src/data/menu.json` are recreated on boot: menu items are created with labels, hrefs, targets, title attributes, and nested children. Internal links are matched to WP pages/posts by slug (as `post_type` items). Menus are assigned to the corresponding theme locations.
+
+### WP Playground Scope Prefix
+- Playground adds a `/scope:0.xxx/` prefix to all internal URLs. The menu exporter strips this prefix via `strip_playground_scope()` so exported hrefs are clean site-relative paths (e.g., `/about/` instead of `/scope:0.123/about/`).
 
 ### Content Deletion
 - The WP REST API only queries `post_status: ['publish', 'draft']`. Trashed and permanently deleted posts are excluded from the response.
