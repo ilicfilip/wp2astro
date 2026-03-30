@@ -145,7 +145,7 @@ See "Deploy Workflow & Site URL Resolution" section for full details.
 - `src/data/menu.json` — Default `{ "locations": { "primary": [] } }` until the first menu sync overwrites it
 
 ### `src/wp-theme.js`
-Minimal **classic** theme **`wp2astro-preview`** (written into Playground at `/wordpress/wp-content/themes/wp2astro-preview/`). Exported via `getWp2AstroPreviewThemeFiles()` and activated via Blueprint `activateTheme` after the exporter plugin. Registers a single **`primary`** menu location so **Appearance → Menus** stays available without relying on block themes. Includes simple `index.php`, `single.php`, `page.php`, `header.php`, `footer.php`, and a short footer note that the public site is Astro. Not committed to the user’s GitHub Astro repo — only lives in the Playground VM.
+Minimal **classic** theme **`wp2astro-preview`** (written into Playground at `/wordpress/wp-content/themes/wp2astro-preview/`). Exported via `getWp2AstroPreviewThemeFiles()` and activated with a Blueprint **`runPHP`** step that calls `switch_theme()` using `WP_CONTENT_DIR` (same `/wordpress/` layout as other steps — the stock `activateTheme` step keys off `documentRoot` and can miss the theme path in some Playground builds). Registers a single **`primary`** menu location so **Appearance → Menus** is available. Includes simple `index.php`, `single.php`, `page.php`, `header.php`, `footer.php`, and a short footer note that the public site is Astro. Not committed to the user’s GitHub Astro repo — only lives in the Playground VM.
 
 ### `src/style.css`
 Styles organized by section:

@@ -340,10 +340,29 @@ async function bootEditor() {
     }
   }
 
-  // Activate plugin, then preview theme (classic menus + simple front-end)
+  // Activate plugin, then preview theme (classic menus + simple front-end).
+  // Use runPHP + switch_theme instead of activateTheme: blueprint activateTheme
+  // resolves paths via documentRoot; Playground expects /wordpress/ like other steps.
+  const activatePreviewThemePhp = `<?php
+define( 'WP_ADMIN', true );
+require_once '/wordpress/wp-load.php';
+require_once ABSPATH . 'wp-admin/includes/theme.php';
+require_once ABSPATH . 'wp-admin/includes/file.php';
+wp_set_current_user( get_users( array( 'role' => 'Administrator' ) )[0]->ID );
+$slug = '${WP2ASTRO_PREVIEW_THEME_SLUG}';
+$dir = WP_CONTENT_DIR . '/themes/' . $slug;
+if ( ! is_dir( $dir ) || ! file_exists( $dir . '/style.css' ) ) {
+	throw new Exception( 'WP2Astro Preview theme files missing at ' . $dir );
+}
+switch_theme( $slug );
+if ( wp_get_theme()->get_stylesheet() !== $slug ) {
+	throw new Exception( 'Could not activate theme ' . $slug );
+}
+`;
+
   steps.push(
     { step: 'activatePlugin', pluginPath: 'wp-astro-exporter/wp-astro-exporter.php' },
-    { step: 'activateTheme', themeFolderName: WP2ASTRO_PREVIEW_THEME_SLUG },
+    { step: 'runPHP', code: activatePreviewThemePhp },
     { step: 'login', username: 'admin', password: 'password' },
     {
       step: 'runPHP',
@@ -368,6 +387,9 @@ async function bootEditor() {
       }
     ?>`
   });
+
+  // Ensure preview theme stays active after import (defensive)
+  steps.push({ step: 'runPHP', code: activatePreviewThemePhp });
 
   // 3. Boot WP Playground
   try {
