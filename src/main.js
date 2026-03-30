@@ -389,32 +389,116 @@ if ( wp_get_theme()->get_stylesheet() !== $slug ) {
     ?>`
   });
 
+  // Import saved nav menu from GitHub (menu.json → WP nav menu)
+  if (existingContent.menu && existingContent.menu.content) {
+    const menuJson = existingContent.menu.content.replace(/\\/g, '\\\\').replace(/'/g, "\\'");
+    steps.push({
+      step: 'runPHP',
+      code: `<?php
+require_once '/wordpress/wp-load.php';
+
+$json = json_decode( '${menuJson}', true );
+if ( empty( $json['locations'] ) ) {
+  return;
+}
+
+foreach ( $json['locations'] as $location => $items ) {
+  if ( empty( $items ) ) continue;
+
+  // Delete existing menu for this location to avoid duplicates
+  $existing_locations = get_nav_menu_locations();
+  if ( ! empty( $existing_locations[ $location ] ) ) {
+    wp_delete_nav_menu( $existing_locations[ $location ] );
+  }
+
+  $menu_name = ucfirst( $location ) . ' Menu';
+  $menu_id = wp_create_nav_menu( $menu_name );
+  if ( is_wp_error( $menu_id ) ) {
+    // Menu with this name may already exist — get its ID
+    $existing = wp_get_nav_menu_object( $menu_name );
+    if ( $existing ) {
+      $menu_id = $existing->term_id;
+      // Clear existing items
+      $old_items = wp_get_nav_menu_items( $menu_id );
+      if ( $old_items ) {
+        foreach ( $old_items as $old ) {
+          wp_delete_post( $old->ID, true );
+        }
+      }
+    } else {
+      continue;
+    }
+  }
+
+  // Recursively create menu items
+  $create_items = function( $items, $parent_id = 0 ) use ( &$create_items, $menu_id ) {
+    $position = 0;
+    foreach ( $items as $item ) {
+      $position++;
+      $href = isset( $item['href'] ) ? $item['href'] : '#';
+
+      // Try to find a matching WP post/page for internal links
+      $object_type = 'custom';
+      $object_id = 0;
+      if ( $href !== '#' && strpos( $href, 'http' ) !== 0 ) {
+        $slug = trim( $href, '/' );
+        if ( $slug === '' ) {
+          // Home link — use custom with site URL
+          $href = home_url( '/' );
+        } else {
+          $page = get_page_by_path( $slug );
+          if ( $page ) {
+            $object_type = 'post_type';
+            $object_id = $page->ID;
+          } else {
+            // Try as post
+            $args = array( 'name' => basename( $slug ), 'post_type' => 'post', 'numberposts' => 1 );
+            $posts = get_posts( $args );
+            if ( ! empty( $posts ) ) {
+              $object_type = 'post_type';
+              $object_id = $posts[0]->ID;
+            }
+          }
+        }
+      }
+
+      $item_data = array(
+        'menu-item-title'     => isset( $item['label'] ) ? $item['label'] : '',
+        'menu-item-url'       => $object_id ? '' : $href,
+        'menu-item-status'    => 'publish',
+        'menu-item-position'  => $position,
+        'menu-item-parent-id' => $parent_id,
+      );
+
+      if ( $object_type === 'post_type' && $object_id ) {
+        $item_data['menu-item-type']      = 'post_type';
+        $item_data['menu-item-object']    = get_post_type( $object_id );
+        $item_data['menu-item-object-id'] = $object_id;
+      } else {
+        $item_data['menu-item-type'] = 'custom';
+      }
+
+      $new_id = wp_update_nav_menu_item( $menu_id, 0, $item_data );
+
+      if ( ! is_wp_error( $new_id ) && ! empty( $item['children'] ) ) {
+        $create_items( $item['children'], $new_id );
+      }
+    }
+  };
+
+  $create_items( $items );
+
+  // Assign menu to theme location
+  $locations = get_theme_mod( 'nav_menu_locations', array() );
+  $locations[ $location ] = $menu_id;
+  set_theme_mod( 'nav_menu_locations', $locations );
+}
+?>`
+    });
+  }
+
   // Ensure preview theme stays active after import (defensive)
   steps.push({ step: 'runPHP', code: activatePreviewThemePhp });
-
-  // Diagnostic: verify theme state after all blueprint steps
-  steps.push({
-    step: 'runPHP',
-    code: `<?php
-require_once '/wordpress/wp-load.php';
-$active = wp_get_theme();
-$slug = '${WP2ASTRO_PREVIEW_THEME_SLUG}';
-$target = wp_get_theme( $slug );
-$dir = WP_CONTENT_DIR . '/themes/' . $slug;
-$files = is_dir( $dir ) ? scandir( $dir ) : 'DIR_NOT_FOUND';
-$all_themes = array_keys( wp_get_themes() );
-echo json_encode( array(
-  'active_theme'    => $active->get_stylesheet(),
-  'active_name'     => $active->get( 'Name' ),
-  'target_exists'   => $target->exists(),
-  'target_dir'      => $dir,
-  'target_files'    => $files,
-  'all_themes'      => $all_themes,
-  'stylesheet_opt'  => get_option( 'stylesheet' ),
-  'template_opt'    => get_option( 'template' ),
-), JSON_PRETTY_PRINT );
-?>`
-  });
 
   // 3. Boot WP Playground
   try {
@@ -429,23 +513,6 @@ echo json_encode( array(
     });
 
     await playgroundClient.isReady();
-
-    // Diagnostic: check active theme after Playground is fully ready
-    try {
-      const diag = await playgroundClient.run({
-        code: `<?php
-require_once '/wordpress/wp-load.php';
-echo json_encode(array(
-  'active' => get_option('stylesheet'),
-  'template' => get_option('template'),
-  'theme_name' => wp_get_theme()->get('Name'),
-));
-?>`
-      });
-      console.log('[WP2Astro] Theme diagnostic:', diag.text);
-    } catch (e) {
-      console.warn('[WP2Astro] Theme diagnostic failed:', e);
-    }
 
     setLoading(null); // Hide overlay
     wpIframe.style.display = '';
