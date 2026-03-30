@@ -4,6 +4,8 @@
  * Not the Astro front-end — footer reminds authors of that.
  */
 
+import screenshotBase64 from './assets/theme-screenshot-b64.js';
+
 export const WP2ASTRO_PREVIEW_THEME_SLUG = 'wp2astro-preview';
 
 /** Absolute virtual paths inside Playground (document root = /wordpress). */
@@ -248,5 +250,19 @@ while ( have_posts() ) :
 endwhile;
 get_footer();
 `,
+  };
+}
+
+/**
+ * Returns a Blueprint runPHP step that writes a pre-made screenshot.png.
+ * Must run AFTER the theme directory has been created via mkdir.
+ */
+export function getWp2AstroPreviewScreenshotStep() {
+  const dir = getWp2AstroPreviewThemeDir();
+  return {
+    step: 'runPHP',
+    code: `<?php
+file_put_contents('${dir}/screenshot.png', base64_decode('${screenshotBase64}'));
+?>`
   };
 }

@@ -8,7 +8,7 @@ import { startPlaygroundWeb } from '@wp-playground/client';
 import * as github from './github.js';
 import { getPluginFiles } from './plugin.js';
 import { getTemplateFiles } from './template.js';
-import { getWp2AstroPreviewThemeFiles, WP2ASTRO_PREVIEW_THEME_SLUG } from './wp-theme.js';
+import { getWp2AstroPreviewThemeFiles, getWp2AstroPreviewScreenshotStep, WP2ASTRO_PREVIEW_THEME_SLUG } from './wp-theme.js';
 import {
   markdownConverter,
   frontmatterBuilder,
@@ -302,6 +302,7 @@ async function bootEditor() {
   for (const [path, data] of Object.entries(getWp2AstroPreviewThemeFiles())) {
     steps.push({ step: 'writeFile', path, data });
   }
+  steps.push(getWp2AstroPreviewScreenshotStep());
 
   // Write plugin files
   for (const [path, content] of Object.entries(pluginFiles)) {
