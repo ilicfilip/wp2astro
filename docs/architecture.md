@@ -145,7 +145,10 @@ See "Deploy Workflow & Site URL Resolution" section for full details.
 - `src/data/menu.json` — Default `{ "locations": { "primary": [] } }` until the first menu sync overwrites it
 
 ### `src/wp-theme.js`
-Minimal **classic** theme **`wp2astro-preview`** (written into Playground at `/wordpress/wp-content/themes/wp2astro-preview/`). Exported via `getWp2AstroPreviewThemeFiles()` and activated with a Blueprint **`runPHP`** step that calls `switch_theme()` using `WP_CONTENT_DIR` (same `/wordpress/` layout as other steps — the stock `activateTheme` step keys off `documentRoot` and can miss the theme path in some Playground builds). Registers a single **`primary`** menu location so **Appearance → Menus** is available. Includes simple `index.php`, `single.php`, `page.php`, `header.php`, `footer.php`, and a short footer note that the public site is Astro. Not committed to the user’s GitHub Astro repo — only lives in the Playground VM.
+Minimal **classic** theme **`wp2astro-preview`** (written into Playground at `/wordpress/wp-content/themes/wp2astro-preview/`). Exported via `getWp2AstroPreviewThemeFiles()` and activated with a Blueprint **`runPHP`** step that calls `switch_theme()` using `WP_CONTENT_DIR`. Registers a single **`primary`** menu location. Includes simple `index.php`, `single.php`, `page.php`, `header.php`, `footer.php`, and a short footer note that the public site is Astro. Not committed to the user’s GitHub Astro repo — only lives in the Playground VM.
+
+### `src/wp-mu-plugin.js`
+Must-use plugin written to **`/wordpress/wp-content/mu-plugins/wp2astro-menus.php`**: (1) **`after_setup_theme`** calls `switch_theme( wp2astro-preview )` if that theme exists and is not already active (covers cases where the active theme reverts between Playground requests). (2) **`admin_menu` priority 999** re-adds **Appearance → Menus** when it is missing (block themes remove it even when the preview theme should be active). Together with the toolbar **Menus** button, authors can always reach `nav-menus.php`.
 
 ### `src/style.css`
 Styles organized by section:

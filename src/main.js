@@ -9,6 +9,7 @@ import * as github from './github.js';
 import { getPluginFiles } from './plugin.js';
 import { getTemplateFiles } from './template.js';
 import { getWp2AstroPreviewThemeFiles, WP2ASTRO_PREVIEW_THEME_SLUG } from './wp-theme.js';
+import { getWp2AstroMuPluginContent, WP2ASTRO_MU_PLUGIN_PATH } from './wp-mu-plugin.js';
 import {
   markdownConverter,
   frontmatterBuilder,
@@ -302,6 +303,13 @@ async function bootEditor() {
   for (const [path, data] of Object.entries(getWp2AstroPreviewThemeFiles())) {
     steps.push({ step: 'writeFile', path, data });
   }
+
+  // Must-use: restore Appearance → Menus + keep preview theme active (Playground + block-theme quirks)
+  steps.push({
+    step: 'writeFile',
+    path: WP2ASTRO_MU_PLUGIN_PATH,
+    data: getWp2AstroMuPluginContent(WP2ASTRO_PREVIEW_THEME_SLUG),
+  });
 
   // Write plugin files
   for (const [path, content] of Object.entries(pluginFiles)) {
