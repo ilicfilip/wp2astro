@@ -65,6 +65,8 @@ Output goes to `dist/` — pure static HTML/JS/CSS, servable by any web server.
 
 See [docs/architecture.md](docs/architecture.md) for the full technical documentation — file map, sync flow, deploy workflow, and known gotchas.
 
+WordPress exporter PHP (HTML→Markdown, import, etc.) lives in **`php-classes/`** and is inlined at build time by `vite-plugin-php-inline.js`; you do not need a separate checkout for a successful build.
+
 ## Related
 
-- [astro-wp-playground](https://github.com/ProgressPlanner/astro-wp-playground) — CLI version (local dev, runs WP Playground via Node)
+- [astro-wp-playground](https://github.com/ProgressPlanner/astro-wp-playground) — CLI version (local dev, runs WP Playground via Node); shares the same exporter concept as this app

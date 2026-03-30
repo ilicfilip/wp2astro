@@ -4,15 +4,9 @@
 
 A browser-based CMS that lets users write content in WordPress, store it as Markdown in a GitHub repo, and auto-deploy as a static Astro site to Cloudflare Pages. No servers, no hosting to manage — everything runs in the browser via WP Playground.
 
-Two projects live in the `Astro Playground/` folder:
+Related repo (optional context): [astro-wp-playground](https://github.com/ProgressPlanner/astro-wp-playground) is a CLI-oriented prototype that runs WordPress Playground via Node. This repo (`astro-wp-web-app/`) is the browser SPA.
 
-```
-Astro Playground/
-├── astro-wp-playground/     ← CLI version (local dev, runs WP Playground via Node)
-└── astro-wp-web-app/        ← Browser SPA (this is the active project)
-```
-
-The CLI project (`astro-wp-playground/`) is the original prototype. The web app (`astro-wp-web-app/`) is the production target. The web app reuses the CLI project's PHP classes at build time via a Vite virtual module.
+Exporter PHP lives in **`php-classes/`** at the root of this repo. At build time, `vite-plugin-php-inline.js` reads those files and exposes them as the virtual module `virtual:php-classes` (see below). You can point the plugin at another directory with `phpInlinePlugin({ phpDir: '/path/to/includes' })` in `vite.config.js` if you want a single shared checkout with the CLI project.
 
 ---
 
@@ -155,10 +149,13 @@ Styles organized by section:
 - **Editor header** — dark bar, flex layout, repo badge
 - **Loading overlay** — centered spinner with message
 
-### `vite-plugin-php-inline.js`
-Custom Vite plugin that reads 6 PHP class files from the CLI project at build time and exposes them as `virtual:php-classes`. Uses `JSON.stringify()` for safe string escaping. Watches files for HMR.
+### `php-classes/`
+Six PHP classes used by the WordPress exporter plugin inside Playground (same logical module as the [astro-wp-playground](https://github.com/ProgressPlanner/astro-wp-playground) plugin). Kept in-repo so the web app builds standalone.
 
-PHP files sourced from: `../astro-wp-playground/wp-astro-plugin/includes/`
+### `vite-plugin-php-inline.js`
+Custom Vite plugin that reads those 6 PHP files at build time (default directory: `php-classes/` next to `vite.config.js`) and exposes them as `virtual:php-classes`. Uses `JSON.stringify()` for safe string escaping. Watches files for HMR.
+
+PHP files (in `php-classes/` unless `phpDir` is overridden):
 - `class-markdown-converter.php` — HTML → Markdown conversion
 - `class-frontmatter-builder.php` — Builds YAML frontmatter from WP post data
 - `class-image-handler.php` — Processes featured + inline images
@@ -167,7 +164,7 @@ PHP files sourced from: `../astro-wp-playground/wp-astro-plugin/includes/`
 - `class-md-importer.php` — Imports existing .md files into WP on boot
 
 ### `vite.config.js`
-Minimal — just loads the PHP inline plugin.
+Loads `phpInlinePlugin()` with defaults (`php-classes/`). Pass `{ phpDir: '...' }` only if you want to load classes from elsewhere (e.g. a sibling `astro-wp-playground` checkout).
 
 ---
 
@@ -301,7 +298,7 @@ This applies to: `[...slug].astro` (both blog and pages), `index.astro` (home pa
 - The content manifest is NOT persisted — it's rebuilt from `fetchContent()` on each boot and updated during sync
 
 ### Build Dependencies
-- The Vite plugin reads PHP files from the sibling CLI project directory. Both projects must exist side-by-side.
+- PHP exporter sources are committed under `php-classes/`; no sibling repo is required unless you override `phpDir` in `vite.config.js`.
 - `libsodium-wrappers` doesn't work with Vite's ESM bundler. That's why we use `tweetnacl` + `blakejs` for GitHub secret encryption.
 
 ---
@@ -332,7 +329,7 @@ npm run dev        # → http://localhost:5173
 npm run build      # → dist/
 ```
 
-Requires the CLI project to exist at `../astro-wp-playground/` for PHP file inlining at build time.
+PHP classes are read from `php-classes/` in this repo (see `vite-plugin-php-inline.js`).
 
 ---
 
