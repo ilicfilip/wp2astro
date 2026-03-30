@@ -468,6 +468,8 @@ foreach ( $json['locations'] as $location => $items ) {
         'menu-item-status'    => 'publish',
         'menu-item-position'  => $position,
         'menu-item-parent-id' => $parent_id,
+        'menu-item-target'    => isset( $item['target'] ) ? $item['target'] : '',
+        'menu-item-attr-title' => isset( $item['title'] ) ? $item['title'] : '',
       );
 
       if ( $object_type === 'post_type' && $object_id ) {

@@ -174,6 +174,13 @@ class Astro_REST_API {
                 'href'  => self::normalize_menu_url( $item->url ),
             ];
 
+            if ( ! empty( $item->target ) ) {
+                $entry['target'] = $item->target;
+            }
+            if ( ! empty( $item->attr_title ) ) {
+                $entry['title'] = $item->attr_title;
+            }
+
             $children = self::build_menu_tree( $items, (int) $item->ID );
             if ( ! empty( $children ) ) {
                 $entry['children'] = $children;
