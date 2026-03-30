@@ -76,6 +76,8 @@ interface NavItem {
   href: string;
   target?: string;
   title?: string;
+  classes?: string[];
+  rel?: string;
   children?: NavItem[];
 }
 interface Props {
@@ -87,14 +89,17 @@ const listClass = depth === 0 ? 'nav-menu' : 'nav-submenu';
 ---
 
 <ul class={listClass}>
-  {items.map((item) => (
-    <li class:list={{ 'nav-item': true, 'has-sub': !!(item.children && item.children.length) }}>
-      <a href={item.href} {...(item.target ? { target: item.target } : {})} {...(item.title ? { title: item.title } : {})}>{item.label}</a>
+  {items.map((item) => {
+    const extraClasses = item.classes?.length ? item.classes.join(' ') : '';
+    return (
+    <li class:list={['nav-item', { 'has-sub': !!(item.children && item.children.length) }, ...( item.classes || [] )]}>
+      <a href={item.href} {...(item.target ? { target: item.target } : {})} {...(item.title ? { title: item.title } : {})} {...(item.rel ? { rel: item.rel } : {})}>{item.label}</a>
       {item.children && item.children.length ? (
         <NavMenu items={item.children} depth={depth + 1} />
       ) : null}
     </li>
-  ))}
+    );
+  })}
 </ul>
 `,
 

@@ -180,6 +180,15 @@ class Astro_REST_API {
             if ( ! empty( $item->attr_title ) ) {
                 $entry['title'] = $item->attr_title;
             }
+            if ( ! empty( $item->classes ) && is_array( $item->classes ) ) {
+                $classes = array_filter( $item->classes );
+                if ( ! empty( $classes ) ) {
+                    $entry['classes'] = array_values( $classes );
+                }
+            }
+            if ( ! empty( $item->xfn ) ) {
+                $entry['rel'] = $item->xfn;
+            }
 
             $children = self::build_menu_tree( $items, (int) $item->ID );
             if ( ! empty( $children ) ) {

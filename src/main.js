@@ -470,6 +470,8 @@ foreach ( $json['locations'] as $location => $items ) {
         'menu-item-parent-id' => $parent_id,
         'menu-item-target'    => isset( $item['target'] ) ? $item['target'] : '',
         'menu-item-attr-title' => isset( $item['title'] ) ? $item['title'] : '',
+        'menu-item-classes'   => ! empty( $item['classes'] ) ? implode( ' ', $item['classes'] ) : '',
+        'menu-item-xfn'      => isset( $item['rel'] ) ? $item['rel'] : '',
       );
 
       if ( $object_type === 'post_type' && $object_id ) {
