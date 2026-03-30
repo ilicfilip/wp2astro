@@ -8,6 +8,7 @@ import { startPlaygroundWeb } from '@wp-playground/client';
 import * as github from './github.js';
 import { getPluginFiles } from './plugin.js';
 import { getTemplateFiles } from './template.js';
+import { getWp2AstroPreviewThemeFiles, WP2ASTRO_PREVIEW_THEME_SLUG } from './wp-theme.js';
 import {
   markdownConverter,
   frontmatterBuilder,
@@ -60,6 +61,7 @@ const launchBtn     = $('#launch-btn');
 const editorRepo    = $('#editor-repo-name');
 const syncStatus    = $('#sync-status');
 const wpMenusBtn    = $('#wp-menus-btn');
+const wpSiteBtn     = $('#wp-site-btn');
 const syncBtn       = $('#sync-btn');
 const backBtn       = $('#back-btn');
 const loadingOverlay = $('#loading-overlay');
@@ -286,6 +288,7 @@ async function bootEditor() {
 
   // Create directories first (writeFile doesn't auto-create parents)
   const dirs = [
+    `/wordpress/wp-content/themes/${WP2ASTRO_PREVIEW_THEME_SLUG}`,
     '/wordpress/wp-content/plugins/wp-astro-exporter/includes',
     '/wordpress/wp-content/astro-content/blog',
     '/wordpress/wp-content/astro-content/pages',
@@ -293,6 +296,11 @@ async function bootEditor() {
   ];
   for (const path of dirs) {
     steps.push({ step: 'mkdir', path });
+  }
+
+  // Minimal classic preview theme (Appearance → Menus, simple front-end)
+  for (const [path, data] of Object.entries(getWp2AstroPreviewThemeFiles())) {
+    steps.push({ step: 'writeFile', path, data });
   }
 
   // Write plugin files
@@ -332,9 +340,10 @@ async function bootEditor() {
     }
   }
 
-  // Activate plugin and configure WP
+  // Activate plugin, then preview theme (classic menus + simple front-end)
   steps.push(
     { step: 'activatePlugin', pluginPath: 'wp-astro-exporter/wp-astro-exporter.php' },
+    { step: 'activateTheme', themeFolderName: WP2ASTRO_PREVIEW_THEME_SLUG },
     { step: 'login', username: 'admin', password: 'password' },
     {
       step: 'runPHP',
@@ -423,24 +432,31 @@ function getCorePHPSteps() {
   ];
 }
 
-// ─── Open WP classic Menus (no address bar in embedded Playground) ─
-wpMenusBtn.addEventListener('click', async () => {
+async function playgroundGoTo(path) {
   if (!playgroundClient) return;
   const goTo = playgroundClient.goTo;
   if (typeof goTo !== 'function') {
     syncStatus.textContent = 'Playground navigation is not available.';
     syncStatus.className = 'status error';
-    return;
+    return false;
   }
   try {
     syncStatus.textContent = '';
     syncStatus.className = 'status';
-    await goTo.call(playgroundClient, '/wp-admin/nav-menus.php');
+    await goTo.call(playgroundClient, path);
+    return true;
   } catch (e) {
-    syncStatus.textContent = `Could not open Menus: ${e.message}`;
+    syncStatus.textContent = `Could not open page: ${e.message}`;
     syncStatus.className = 'status error';
+    return false;
   }
-});
+}
+
+// ─── Open WP classic Menus (no address bar in embedded Playground) ─
+wpMenusBtn.addEventListener('click', () => playgroundGoTo('/wp-admin/nav-menus.php'));
+
+// ─── WordPress front-end preview (differs from Astro static site) ───
+wpSiteBtn.addEventListener('click', () => playgroundGoTo('/'));
 
 // ─── Sync: Commit to GitHub ───────────────────────────────────
 syncBtn.addEventListener('click', async () => {

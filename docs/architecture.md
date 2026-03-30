@@ -49,7 +49,7 @@ Entry point. Two screens: setup and editor.
 - "Reset session" link at the bottom clears `sessionStorage` and reloads the page
 
 **Editor screen** layout:
-- Dark header bar with repo name badge, sync status, **Menus** button (navigates the Playground iframe to `/wp-admin/nav-menus.php` — there is no address bar; block themes such as Twenty Twenty-Five hide **Appearance → Menus**), "Sync All" button, and "Back" button
+- Dark header bar with repo name badge, sync status, **View site** (`goTo('/')` — WordPress front-end preview; differs from the Astro static site), **Menus** (`goTo('/wp-admin/nav-menus.php')` — there is no address bar), "Sync All" button, and "Back" button
 - Loading overlay with spinner (shown while WP Playground boots)
 - Full-height iframe for WP Playground
 
@@ -67,7 +67,7 @@ Main application logic. Key responsibilities:
 - Fetches existing content from GitHub via `github.fetchContent()` (posts, pages, images, optional `src/data/menu.json`)
 - Seeds `contentManifest` from fetched content (path → git blob SHA) so deletions can be detected on first sync
 - Sets `contentManifest._templatePushed = true` if content already exists
-- Builds WP Playground Blueprint with: mkdir steps, plugin files, PHP class files, existing content `.md` files, plugin activation, WP config, and content import via `Astro_MD_Importer`
+- Builds WP Playground Blueprint with: mkdir steps, **preview theme** files, plugin files, PHP class files, existing content `.md` files, plugin activation, **theme activation** (`wp2astro-preview`), WP config, and content import via `Astro_MD_Importer`
 
 **Sync flow (`syncToGitHub()`):**
 1. Fetches posts, pages, images, and **menu** from WP via REST API (`playgroundClient.request()`)
@@ -143,6 +143,9 @@ See "Deploy Workflow & Site URL Resolution" section for full details.
 **Placeholder files:**
 - `src/content/blog/.gitkeep`, `src/content/pages/.gitkeep`, `public/assets/images/.gitkeep`
 - `src/data/menu.json` — Default `{ "locations": { "primary": [] } }` until the first menu sync overwrites it
+
+### `src/wp-theme.js`
+Minimal **classic** theme **`wp2astro-preview`** (written into Playground at `/wordpress/wp-content/themes/wp2astro-preview/`). Exported via `getWp2AstroPreviewThemeFiles()` and activated via Blueprint `activateTheme` after the exporter plugin. Registers a single **`primary`** menu location so **Appearance → Menus** stays available without relying on block themes. Includes simple `index.php`, `single.php`, `page.php`, `header.php`, `footer.php`, and a short footer note that the public site is Astro. Not committed to the user’s GitHub Astro repo — only lives in the Playground VM.
 
 ### `src/style.css`
 Styles organized by section:
