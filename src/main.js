@@ -517,6 +517,19 @@ foreach ( $json['locations'] as $location => $items ) {
     setLoading(null); // Hide overlay
     wpIframe.style.display = '';
 
+    // Try to resolve deploy URL if we don't already have one
+    if (!cfPagesUrl) {
+      github.getDeploymentUrl(selectedRepo.owner, selectedRepo.name).then(url => {
+        if (url) {
+          cfPagesUrl = url;
+          sessionStorage.setItem('cf_pages_url', cfPagesUrl);
+          updateSiteBtn();
+        }
+      });
+    } else {
+      updateSiteBtn();
+    }
+
   } catch (e) {
     setLoading(`Error: ${e.message}`);
   }
@@ -586,8 +599,22 @@ async function playgroundGoTo(path) {
 // ─── Open WP classic Menus (no address bar in embedded Playground) ─
 wpMenusBtn.addEventListener('click', () => playgroundGoTo('/wp-admin/nav-menus.php'));
 
-// ─── WordPress front-end preview (differs from Astro static site) ───
-wpSiteBtn.addEventListener('click', () => playgroundGoTo('/'));
+// ─── Open live Astro site in new tab ───
+wpSiteBtn.addEventListener('click', () => {
+  if (cfPagesUrl) {
+    window.open(cfPagesUrl, '_blank');
+  } else {
+    syncStatus.textContent = 'No deploy URL yet — sync first, then wait for deploy to finish.';
+    syncStatus.className = 'status working';
+  }
+});
+
+function updateSiteBtn() {
+  wpSiteBtn.disabled = !cfPagesUrl;
+  wpSiteBtn.title = cfPagesUrl
+    ? `Open ${cfPagesUrl}`
+    : 'Open the live Astro site (requires at least one sync + deploy)';
+}
 
 // ─── Sync: Commit to GitHub ───────────────────────────────────
 syncBtn.addEventListener('click', async () => {
@@ -738,6 +765,7 @@ async function syncToGitHub() {
         if (state === 'success' && url) {
           cfPagesUrl = url;
           sessionStorage.setItem('cf_pages_url', cfPagesUrl);
+          updateSiteBtn();
           syncStatus.innerHTML = `Deployed &mdash; <a href="${cfPagesUrl}" target="_blank" style="color:inherit;text-decoration:underline;">${cfPagesUrl}</a>`;
           syncStatus.className = 'status success';
         } else if (state === 'failure' || state === 'error') {
