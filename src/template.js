@@ -805,13 +805,13 @@ jobs:
           DEPLOY_ID=\$(curl -sf -X POST "https://api.github.com/repos/\${{ github.repository }}/deployments" \\
             -H "Authorization: token \$GITHUB_TOKEN" \\
             -H "Accept: application/vnd.github+json" \\
-            -d "{\"ref\":\"main\",\"environment\":\"production\",\"auto_merge\":false,\"required_contexts\":[]}" \\
+            -d '{"ref":"main","environment":"production","auto_merge":false,"required_contexts":[]}' \\
             | grep -o '"id":[0-9]*' | head -1 | cut -d: -f2)
           if [ -n "\$DEPLOY_ID" ]; then
             curl -sf -X POST "https://api.github.com/repos/\${{ github.repository }}/deployments/\$DEPLOY_ID/statuses" \\
               -H "Authorization: token \$GITHUB_TOKEN" \\
               -H "Accept: application/vnd.github+json" \\
-              -d "{\"state\":\"success\",\"environment_url\":\"\$SITE_URL\",\"environment\":\"production\"}"
+              -d '{"state":"success","environment_url":"'"\$SITE_URL"'","environment":"production"}'
           fi
 `,
   };
