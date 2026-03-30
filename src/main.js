@@ -59,6 +59,7 @@ const repoInfo      = $('#repo-info');
 const launchBtn     = $('#launch-btn');
 const editorRepo    = $('#editor-repo-name');
 const syncStatus    = $('#sync-status');
+const wpMenusBtn    = $('#wp-menus-btn');
 const syncBtn       = $('#sync-btn');
 const backBtn       = $('#back-btn');
 const loadingOverlay = $('#loading-overlay');
@@ -421,6 +422,25 @@ function getCorePHPSteps() {
     },
   ];
 }
+
+// ─── Open WP classic Menus (no address bar in embedded Playground) ─
+wpMenusBtn.addEventListener('click', async () => {
+  if (!playgroundClient) return;
+  const goTo = playgroundClient.goTo;
+  if (typeof goTo !== 'function') {
+    syncStatus.textContent = 'Playground navigation is not available.';
+    syncStatus.className = 'status error';
+    return;
+  }
+  try {
+    syncStatus.textContent = '';
+    syncStatus.className = 'status';
+    await goTo.call(playgroundClient, '/wp-admin/nav-menus.php');
+  } catch (e) {
+    syncStatus.textContent = `Could not open Menus: ${e.message}`;
+    syncStatus.className = 'status error';
+  }
+});
 
 // ─── Sync: Commit to GitHub ───────────────────────────────────
 syncBtn.addEventListener('click', async () => {

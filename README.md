@@ -67,7 +67,7 @@ See [docs/architecture.md](docs/architecture.md) for the full technical document
 
 WordPress exporter PHP (HTML→Markdown, import, etc.) lives in **`php-classes/`** and is inlined at build time by `vite-plugin-php-inline.js`; you do not need a separate checkout for a successful build.
 
-**Navigation:** Configure menus under **Appearance → Menus** in WordPress and assign them to your theme’s menu locations (or rely on the first menu as `primary`). After sync, the static site reads **`src/data/menu.json`** at build time. No CI workflow changes are required.
+**Navigation:** Configure **classic** menus (not only the Site Editor Navigation block) so they export correctly. With **Twenty Twenty-Five** and other block themes, **Appearance → Menus** is often hidden; this app’s editor toolbar includes a **Menus** button that opens `/wp-admin/nav-menus.php` inside Playground (there is no address bar in the embedded view). Assign menus to theme locations when available, or rely on the first menu as `primary`. After sync, the static site reads **`src/data/menu.json`** at build time. No CI workflow changes are required.
 
 ## Related
 

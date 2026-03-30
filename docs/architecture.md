@@ -49,7 +49,7 @@ Entry point. Two screens: setup and editor.
 - "Reset session" link at the bottom clears `sessionStorage` and reloads the page
 
 **Editor screen** layout:
-- Dark header bar with repo name badge, sync status, "Sync All" button, and "Back" button
+- Dark header bar with repo name badge, sync status, **Menus** button (navigates the Playground iframe to `/wp-admin/nav-menus.php` — there is no address bar; block themes such as Twenty Twenty-Five hide **Appearance → Menus**), "Sync All" button, and "Back" button
 - Loading overlay with spinner (shown while WP Playground boots)
 - Full-height iframe for WP Playground
 
