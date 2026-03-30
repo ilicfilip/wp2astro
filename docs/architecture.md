@@ -67,7 +67,7 @@ Main application logic. Key responsibilities:
 - Fetches existing content from GitHub via `github.fetchContent()` (posts, pages, images, optional `src/data/menu.json`)
 - Seeds `contentManifest` from fetched content (path → git blob SHA) so deletions can be detected on first sync
 - Sets `contentManifest._templatePushed = true` if content already exists
-- Builds WP Playground Blueprint with: mkdir steps, **preview theme** files (including pre-made screenshot via base64 decode), plugin files, PHP class files, existing content `.md` files, plugin activation, **theme activation** (`wp2astro-preview` via `runPHP`/`switch_theme()`), WP config, content import via `Astro_MD_Importer`, and **menu import** from `menu.json` (recreates nav menu items with labels, hrefs, targets, title attributes, and nested children; assigns to theme locations)
+- Builds WP Playground Blueprint with: mkdir steps, **preview theme** files (including pre-made screenshot via base64 decode), plugin files, PHP class files, existing content `.md` files, plugin activation, **theme activation** (`wp2astro-preview` via `runPHP`/`switch_theme()`), WP config, content import via `Astro_MD_Importer`, and **menu import** from `menu.json` (recreates nav menu items with labels, hrefs, targets, title attributes, CSS classes, rel/XFN, and nested children; assigns to theme locations)
 - After Playground is ready, fetches the deploy URL from GitHub Deployments API and enables the **View site** button if available
 
 **Sync flow (`syncToGitHub()`):**
@@ -103,7 +103,7 @@ WP plugin PHP code as JS string exports:
   - `GET /astro-export/v1/pages` — Same for pages
   - `GET /astro-export/v1/images` — Images as base64 with metadata
   - `GET /astro-export/v1/manifest` — `{path: md5hash}` for change detection (includes `src/data/menu.json`)
-  - `GET /astro-export/v1/menu` — Nav menus by theme location: `{ locations: { primary: [...], ... }, hash }`. Tree nodes: `label`, `href`, optional `target` (e.g. `_blank`), optional `title` (title attribute), optional nested `children`. Internal URLs normalized to site-relative paths (Playground `/scope:*` prefixes are stripped); external links unchanged.
+  - `GET /astro-export/v1/menu` — Nav menus by theme location: `{ locations: { primary: [...], ... }, hash }`. Tree nodes: `label`, `href`, optional `target` (e.g. `_blank`), optional `title` (title attribute), optional `classes` (string array of CSS classes), optional `rel` (XFN/link relationship), optional nested `children`. Internal URLs normalized to site-relative paths (Playground `/scope:*` prefixes are stripped); external links unchanged.
   - `GET /astro-export/v1/post/{id}` and `/page/{id}` — Single item
 - `getPluginFiles()` — Returns `{ virtualPath: phpContent }` map for Blueprint writeFile steps. Only includes the main plugin file and REST API class; core PHP classes are written separately via `getCorePHPSteps()` in main.js.
 
@@ -123,8 +123,8 @@ WP plugin PHP code as JS string exports:
 
 **Site navigation (`src/data/menu.json` + components):**
 - Committed JSON shape: `{ "locations": { "primary": [...], ... } }`. Sync writes pretty-printed JSON; the REST `hash` is derived from WordPress’s compact JSON of the same structure.
-- `NavMenu.astro` — Recursive list for nested items; renders `target` and `title` attributes on links when present. Submenus use hover dropdown styles in the layout.
-- **WordPress:** Use **Appearance → Menus**. Assign the menu to your theme’s primary (or header) **location** when available; if no location is assigned, the exporter uses the **first** menu as `primary`. Classic menus only — not the block-only Navigation block in isolation. Menu items support link target (`_blank`, etc.) and title attribute fields.
+- `NavMenu.astro` — Recursive list for nested items; renders `target`, `title`, `rel` attributes on links and CSS classes on `<li>` elements when present. Submenus use hover dropdown styles in the layout.
+- **WordPress:** Use **Appearance → Menus**. Assign the menu to your theme’s primary (or header) **location** when available; if no location is assigned, the exporter uses the **first** menu as `primary`. Classic menus only — not the block-only Navigation block in isolation. All WP menu item fields are synced: Navigation Label, URL, Link Target, Title Attribute, CSS Classes, and Link Relationship (XFN).
 
 **Layouts:**
 - `BaseLayout.astro` — Imports `../data/menu.json`. If `locations.primary` (or the first non-empty location) has items, the header nav uses **WordPress**. Otherwise it falls back to **Home**, **Blog**, and links derived from the `pages` collection (previous behavior). Dark gradient header (`#1a1a2e` → `#2d2b55` → `#3d3580`), sticky nav, warm off-white body (`#faf9f7`), dark footer. Global styles defined in `<style is:global>`.
@@ -303,7 +303,7 @@ This applies to: `[...slug].astro` (both blog and pages), `index.astro` (home pa
 ### Content Import on Boot
 - The plugin's `mainPlugin` must `require_once` both `class-md-to-blocks.php` and `class-md-importer.php` for the importer to work. These were originally missing and the import silently failed because `class_exists('Astro_MD_Importer')` returned false.
 - Existing content is fetched from GitHub, written to WP Playground's virtual filesystem, then imported into WP via the `Astro_MD_Importer` class in a `runPHP` Blueprint step.
-- **Nav menus** from `src/data/menu.json` are recreated on boot: menu items are created with labels, hrefs, targets, title attributes, and nested children. Internal links are matched to WP pages/posts by slug (as `post_type` items). Menus are assigned to the corresponding theme locations.
+- **Nav menus** from `src/data/menu.json` are recreated on boot: menu items are created with labels, hrefs, targets, title attributes, CSS classes, rel/XFN, and nested children. Internal links are matched to WP pages/posts by slug (as `post_type` items). Menus are assigned to the corresponding theme locations.
 
 ### WP Playground Scope Prefix
 - Playground adds a `/scope:0.xxx/` prefix to all internal URLs. The menu exporter strips this prefix via `strip_playground_scope()` so exported hrefs are clean site-relative paths (e.g., `/about/` instead of `/scope:0.123/about/`).
