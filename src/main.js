@@ -658,19 +658,36 @@ async function syncToGitHub() {
       delete contentManifest[path];
     }
 
-    // Always try to get the real deployment URL from GitHub Deployments
-    const deployUrl = await github.getDeploymentUrl(selectedRepo.owner, selectedRepo.name);
-    if (deployUrl) {
-      cfPagesUrl = deployUrl;
-      sessionStorage.setItem('cf_pages_url', cfPagesUrl);
-    }
+    // Show immediate sync confirmation
+    syncStatus.textContent = `Synced ${changeCount} file${changeCount > 1 ? 's' : ''}. Waiting for deploy...`;
+    syncStatus.className = 'status working';
+    syncBtn.disabled = false;
 
-    if (cfPagesUrl) {
-      syncStatus.innerHTML = `Synced ${changeCount} file${changeCount > 1 ? 's' : ''} &mdash; <a href="${cfPagesUrl}" target="_blank" style="color:inherit;text-decoration:underline;">${cfPagesUrl}</a>`;
-    } else {
-      syncStatus.textContent = `Synced ${changeCount} file${changeCount > 1 ? 's' : ''}. Deploy will start shortly.`;
-    }
-    syncStatus.className = 'status success';
+    // Poll for deploy completion in the background
+    const commitTime = Date.now() - 5000; // small buffer for clock skew
+    github.waitForDeploy(
+      selectedRepo.owner, selectedRepo.name, commitTime,
+      (state, url) => {
+        if (state === 'success' && url) {
+          cfPagesUrl = url;
+          sessionStorage.setItem('cf_pages_url', cfPagesUrl);
+          syncStatus.innerHTML = `Deployed &mdash; <a href="${cfPagesUrl}" target="_blank" style="color:inherit;text-decoration:underline;">${cfPagesUrl}</a>`;
+          syncStatus.className = 'status success';
+        } else if (state === 'failure' || state === 'error') {
+          syncStatus.textContent = `Synced ${changeCount} file${changeCount > 1 ? 's' : ''} but deploy failed.`;
+          syncStatus.className = 'status error';
+        } else if (state === 'timeout') {
+          // Fall back to showing URL if we have one from a previous deploy
+          if (cfPagesUrl) {
+            syncStatus.innerHTML = `Synced &mdash; <a href="${cfPagesUrl}" target="_blank" style="color:inherit;text-decoration:underline;">${cfPagesUrl}</a>`;
+          } else {
+            syncStatus.textContent = `Synced ${changeCount} file${changeCount > 1 ? 's' : ''}. Deploy may still be running.`;
+          }
+          syncStatus.className = 'status success';
+        }
+        // pending/in_progress — keep showing "Waiting for deploy..."
+      }
+    );
 
   } catch (e) {
     syncStatus.textContent = `Error: ${e.message}`;

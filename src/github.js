@@ -305,3 +305,67 @@ export async function getDeploymentUrl(owner, repo) {
   }
   return null;
 }
+
+/**
+ * Poll GitHub Deployments until one created after `afterTimestamp` reaches
+ * a terminal state (success/failure/error). Calls `onStatus(state, url)`
+ * on each poll. Returns the final { state, url }.
+ *
+ * @param {string} owner
+ * @param {string} repo
+ * @param {number} afterTimestamp - Only consider deployments created after this (ms since epoch)
+ * @param {function} onStatus - Callback: (state: string, url: string|null) => void
+ * @param {object} [opts]
+ * @param {number} [opts.interval=8000] - Poll interval in ms
+ * @param {number} [opts.timeout=300000] - Give up after this many ms (default 5 min)
+ */
+export async function waitForDeploy(owner, repo, afterTimestamp, onStatus, opts = {}) {
+  const interval = opts.interval || 8000;
+  const timeout = opts.timeout || 300000;
+  const start = Date.now();
+
+  while (Date.now() - start < timeout) {
+    try {
+      const { data: deployments } = await octokit.rest.repos.listDeployments({
+        owner, repo, per_page: 5,
+      });
+
+      for (const dep of deployments) {
+        // Only look at deployments created after our commit
+        if (new Date(dep.created_at).getTime() < afterTimestamp) continue;
+
+        const { data: statuses } = await octokit.rest.repos.listDeploymentStatuses({
+          owner, repo, deployment_id: dep.id, per_page: 1,
+        });
+
+        if (statuses.length === 0) continue;
+
+        const status = statuses[0];
+        let url = null;
+        if (status.environment_url) {
+          const match = status.environment_url.match(/https?:\/\/[a-f0-9]+\.(.+\.pages\.dev)/);
+          url = match ? `https://${match[1]}` : status.environment_url;
+        }
+
+        if (status.state === 'success') {
+          onStatus('success', url);
+          return { state: 'success', url };
+        }
+        if (status.state === 'failure' || status.state === 'error') {
+          onStatus(status.state, url);
+          return { state: status.state, url };
+        }
+
+        // Still pending/in_progress
+        onStatus(status.state, url);
+      }
+    } catch (e) {
+      console.warn('[waitForDeploy] poll error:', e.message);
+    }
+
+    await new Promise(r => setTimeout(r, interval));
+  }
+
+  onStatus('timeout', null);
+  return { state: 'timeout', url: null };
+}

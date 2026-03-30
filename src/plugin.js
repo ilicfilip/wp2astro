@@ -197,6 +197,7 @@ class Astro_REST_API {
 
         if ( strpos( $url, 'http' ) !== 0 && strpos( $url, '//' ) !== 0 ) {
             $path = $url[0] === '/' ? $url : '/' . $url;
+            $path = self::strip_playground_scope( $path );
             return $path === '/' ? '/' : trailingslashit( $path );
         }
 
@@ -207,6 +208,7 @@ class Astro_REST_API {
             && strtolower( $parsed['host'] ) === strtolower( $site['host'] ) ) {
             $path = isset( $parsed['path'] ) ? $parsed['path'] : '/';
             $path = '/' . trim( $path, '/' );
+            $path = self::strip_playground_scope( $path );
             if ( $path === '/' ) {
                 return '/';
             }
@@ -214,6 +216,13 @@ class Astro_REST_API {
         }
 
         return $url;
+    }
+
+    /**
+     * Strip WP Playground scope prefix (e.g. /scope:0.123456/) from paths.
+     */
+    private static function strip_playground_scope( $path ) {
+        return preg_replace( '#^/scope:[0-9.]+#', '', $path ) ?: '/';
     }
 
     public static function get_menu() {
