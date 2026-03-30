@@ -19,7 +19,7 @@ Exporter PHP lives in **`php-classes/`** at the root of this repo. At build time
 3. **Cloudflare config** (optional) → Enter CF Account ID + API Token → saves as GitHub Actions secrets + pushes deploy workflow
 4. **Launch editor** → Boots WP Playground in an iframe with the exporter plugin pre-loaded
 5. **Create content** → User writes posts/pages in the standard WP editor
-6. **Sync** → Exports all content as Markdown via REST API, commits additions AND deletions to GitHub via GraphQL
+6. **Sync** → Exports posts, pages, images, and **navigation menus** via REST API; commits additions AND deletions to GitHub via GraphQL
 7. **Auto-deploy** → GitHub Actions builds the Astro site and deploys to Cloudflare Pages
 
 ### Key Technologies
@@ -29,7 +29,7 @@ Exporter PHP lives in **`php-classes/`** at the root of this repo. At build time
 | CMS | WordPress Playground (in-browser, runs in iframe) |
 | Build tool | Vite |
 | Content format | Markdown with YAML frontmatter |
-| Static site | Astro 5 (content collections: `blog` + `pages`) |
+| Static site | Astro 5 (content collections: `blog` + `pages`; header nav from `src/data/menu.json` when synced) |
 | Git API | GitHub GraphQL (`createCommitOnBranch` mutation) |
 | Secrets encryption | tweetnacl + blakejs (NaCl sealed box) |
 | Deploy | GitHub Actions → Cloudflare Pages via wrangler-action |
@@ -64,15 +64,15 @@ Main application logic. Key responsibilities:
 - Session reset — "Reset session" link clears `sessionStorage` and reloads
 
 **Editor boot (`bootEditor()`):**
-- Fetches existing content from GitHub via `github.fetchContent()`
+- Fetches existing content from GitHub via `github.fetchContent()` (posts, pages, images, optional `src/data/menu.json`)
 - Seeds `contentManifest` from fetched content (path → git blob SHA) so deletions can be detected on first sync
 - Sets `contentManifest._templatePushed = true` if content already exists
 - Builds WP Playground Blueprint with: mkdir steps, plugin files, PHP class files, existing content `.md` files, plugin activation, WP config, and content import via `Astro_MD_Importer`
 
 **Sync flow (`syncToGitHub()`):**
-1. Fetches posts, pages, images from WP via REST API (`playgroundClient.request()`)
-2. Compares MD5 hashes against `contentManifest` to find additions/changes
-3. Detects deletions — paths in `contentManifest` (under `src/content/blog/`, `src/content/pages/`, `public/assets/images/`) that are not present in WP's current content
+1. Fetches posts, pages, images, and **menu** from WP via REST API (`playgroundClient.request()`)
+2. Compares MD5 hashes against `contentManifest` to find additions/changes (including `src/data/menu.json`)
+3. Detects deletions — paths in `contentManifest` (under `src/content/blog/`, `src/content/pages/`, `public/assets/images/`) that are not present in WP's current content (`menu.json` is not deleted by this logic)
 4. Commits all additions + deletions in a single GraphQL `createCommitOnBranch` mutation
 5. Updates manifest (add new hashes, remove deleted paths)
 6. Queries GitHub Deployments API for the real CF Pages URL and displays it as a clickable link
@@ -88,7 +88,7 @@ GitHub API wrapper using Octokit. Key functions:
 - `connect(token)` — Initialize Octokit, return authenticated user
 - `listRepos()` — All repos user can push to (paginated, max 100)
 - `createRepo(name)` — Create with `auto_init: true` (template files pushed on first sync)
-- `fetchContent(owner, repo)` — Fetch existing blog posts, pages, images from repo. Returns `{ posts: [{name, content, sha}], pages: [...], images: [...] }`
+- `fetchContent(owner, repo)` — Fetch existing blog posts, pages, images, and `src/data/menu.json` from repo. Returns `{ posts, pages, images, menu }` (`menu` is `null` if the file is missing)
 - `commitFiles(owner, repo, branch, files, message, deletePaths=[])` — **Uses GraphQL `createCommitOnBranch` mutation**. HEAD OID fetched via GraphQL (not REST — avoids stale cache). `files` is `{ path: content }` for additions. `deletePaths` is `string[]` of paths to delete. Both are passed in `fileChanges: { additions, deletions }`.
 - `setRepoSecret(owner, repo, name, value)` — Encrypt with NaCl sealed box, set via Actions secrets API
 - `getDeploymentUrl(owner, repo)` — Searches recent GitHub Deployments for any with a `.pages.dev` URL. Strips per-commit hash prefix (e.g., `abc123.my-site.pages.dev` → `my-site.pages.dev`). Returns the production URL or `null`.
@@ -100,7 +100,8 @@ WP plugin PHP code as JS string exports:
   - `GET /astro-export/v1/posts` — All published/draft posts as markdown (returns `[{id, slug, filename, markdown, hash}]`)
   - `GET /astro-export/v1/pages` — Same for pages
   - `GET /astro-export/v1/images` — Images as base64 with metadata
-  - `GET /astro-export/v1/manifest` — `{path: md5hash}` for change detection
+  - `GET /astro-export/v1/manifest` — `{path: md5hash}` for change detection (includes `src/data/menu.json`)
+  - `GET /astro-export/v1/menu` — Nav menus by theme location: `{ locations: { primary: [...], ... }, hash }`. Tree nodes: `label`, `href`, optional nested `children`. Internal URLs normalized to site-relative paths; external links unchanged.
   - `GET /astro-export/v1/post/{id}` and `/page/{id}` — Single item
 - `getPluginFiles()` — Returns `{ virtualPath: phpContent }` map for Blueprint writeFile steps. Only includes the main plugin file and REST API class; core PHP classes are written separately via `getCorePHPSteps()` in main.js.
 
@@ -118,8 +119,13 @@ WP plugin PHP code as JS string exports:
 - `blog` collection — schema: title, description, pubDate, updatedDate, author, categories, tags, heroImage, draft
 - `pages` collection — schema: title, description, updatedDate, menuOrder, heroImage, draft
 
+**Site navigation (`src/data/menu.json` + components):**
+- Committed JSON shape: `{ "locations": { "primary": [...], ... } }`. Sync writes pretty-printed JSON; the REST `hash` is derived from WordPress’s compact JSON of the same structure.
+- `NavMenu.astro` — Recursive list for nested items; submenus use hover dropdown styles in the layout.
+- **WordPress:** Use **Appearance → Menus**. Assign the menu to your theme’s primary (or header) **location** when available; if no location is assigned, the exporter uses the **first** menu as `primary`. Classic menus only — not the block-only Navigation block in isolation.
+
 **Layouts:**
-- `BaseLayout.astro` — Dark gradient header (`#1a1a2e` → `#2d2b55` → `#3d3580`), sticky nav with pill-style links, warm off-white body (`#faf9f7`), dark footer matching header. Dynamically renders page nav links from the `pages` collection. Global styles defined in `<style is:global>`.
+- `BaseLayout.astro` — Imports `../data/menu.json`. If `locations.primary` (or the first non-empty location) has items, the header nav uses **WordPress**. Otherwise it falls back to **Home**, **Blog**, and links derived from the `pages` collection (previous behavior). Dark gradient header (`#1a1a2e` → `#2d2b55` → `#3d3580`), sticky nav, warm off-white body (`#faf9f7`), dark footer. Global styles defined in `<style is:global>`.
 - `BlogPost.astro` — Article layout with hero image, styled metadata bar (date, author, updated date with `·` separators), description as italic lead. Scoped styles for content typography (headings, blockquotes, code blocks).
 - `PageLayout.astro` — Simple article layout with optional hero image.
 
@@ -136,6 +142,7 @@ See "Deploy Workflow & Site URL Resolution" section for full details.
 
 **Placeholder files:**
 - `src/content/blog/.gitkeep`, `src/content/pages/.gitkeep`, `public/assets/images/.gitkeep`
+- `src/data/menu.json` — Default `{ "locations": { "primary": [] } }` until the first menu sync overwrites it
 
 ### `src/style.css`
 Styles organized by section:
@@ -171,13 +178,15 @@ Loads `phpInlinePlugin()` with defaults (`php-classes/`). Pass `{ phpDir: '...' 
 ## How the Sync Works
 
 1. SPA calls WP Playground REST API via `playgroundClient.request()` (NOT `fetch()` — avoids CORS)
-2. Gets all posts, pages, and images as JSON (images are base64-encoded)
+2. Gets all posts, pages, images, and **menu** as JSON (images are base64-encoded; menu includes a content `hash` for `src/data/menu.json`)
 3. Compares MD5 hashes against in-memory `contentManifest` to find additions/changes
 4. Detects deletions: any path in `contentManifest` under `src/content/blog/`, `src/content/pages/`, or `public/assets/images/` that doesn't appear in the current WP content is marked for deletion. Manifest keys starting with `_` (internal flags) are skipped.
 5. On first sync, also includes Astro template/scaffold files (excluding `.github/` workflows)
 6. Commits all additions AND deletions in a single GraphQL `createCommitOnBranch` mutation (uses `fileChanges: { additions, deletions }`)
-7. Updates local manifest — adds new hashes, removes deleted paths
+7. Updates local manifest — adds new hashes, removes deleted paths (including `src/data/menu.json`’s hash from the menu endpoint)
 8. Queries GitHub Deployments API for the real CF Pages URL and displays it
+
+**CI:** No workflow changes are required for `menu.json` — `npm run build` picks it up like any other committed file under `src/`.
 
 ### Content Manifest Seeding
 
@@ -185,7 +194,7 @@ On boot, `bootEditor()` seeds `contentManifest` from `fetchContent()` results:
 ```js
 contentManifest[`src/content/blog/${post.name}`] = post.sha; // git blob SHA
 ```
-This ensures deletions are detected even on the first sync of a fresh session. The git blob SHA won't match the MD5 hash from WP export, so the first sync will re-push all content (ensuring consistency). Subsequent syncs use MD5 hashes.
+This ensures deletions are detected even on the first sync of a fresh session. The git blob SHA won't match the MD5 hash from WP export, so the first sync will re-push all content (ensuring consistency). Subsequent syncs use MD5 hashes. If `menu.json` exists in the repo, its blob SHA is seeded the same way; the first sync may re-commit menu JSON to align hashes.
 
 ### Why GraphQL Instead of REST
 

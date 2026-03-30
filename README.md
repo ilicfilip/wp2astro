@@ -8,7 +8,7 @@ A browser-based CMS that lets you write content in WordPress, store it as Markdo
 2. Select or create a repository
 3. Optionally configure Cloudflare Pages for auto-deploy
 4. Write posts and pages in the WordPress editor (running in-browser)
-5. Hit "Sync All" — content is exported as Markdown and committed to GitHub
+5. Hit "Sync All" — content is exported as Markdown, images, and **navigation menus** (`src/data/menu.json`) and committed to GitHub
 6. GitHub Actions builds the Astro site and deploys to Cloudflare Pages
 
 ## Tech Stack
@@ -18,7 +18,7 @@ A browser-based CMS that lets you write content in WordPress, store it as Markdo
 | CMS | WordPress Playground (in-browser, iframe) |
 | Build | Vite |
 | Content | Markdown with YAML frontmatter |
-| Static Site | Astro 5 (content collections) |
+| Static Site | Astro 5 (content collections + optional WP-driven header nav) |
 | Git API | GitHub GraphQL (`createCommitOnBranch`) |
 | Deploy | GitHub Actions + Cloudflare Pages (wrangler) |
 
@@ -66,6 +66,8 @@ Output goes to `dist/` — pure static HTML/JS/CSS, servable by any web server.
 See [docs/architecture.md](docs/architecture.md) for the full technical documentation — file map, sync flow, deploy workflow, and known gotchas.
 
 WordPress exporter PHP (HTML→Markdown, import, etc.) lives in **`php-classes/`** and is inlined at build time by `vite-plugin-php-inline.js`; you do not need a separate checkout for a successful build.
+
+**Navigation:** Configure menus under **Appearance → Menus** in WordPress and assign them to your theme’s menu locations (or rely on the first menu as `primary`). After sync, the static site reads **`src/data/menu.json`** at build time. No CI workflow changes are required.
 
 ## Related
 
