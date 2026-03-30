@@ -285,6 +285,7 @@ This applies to: `[...slug].astro` (both blog and pages), `index.astro` (home pa
 - `.github/workflows/deploy.yml` is pushed separately when user saves CF credentials
 - The `_templatePushed` flag is set AFTER commit succeeds (was a bug before — setting it before meant retries would skip templates)
 - If the repo already has content (detected by `fetchContent()`), `_templatePushed` is set during boot to avoid re-pushing templates
+- **No template versioning yet:** templates are only pushed once on first sync. If the app ships updated templates (e.g., `BaseLayout.astro` gaining `NavMenu` support), existing repos do not receive the update automatically. Currently requires a manual push to update templates in existing repos.
 
 ### Deploy Workflow Gotchas
 - Must use `npm install` (not `npm ci`) because no `package-lock.json` is committed to the repo
@@ -292,6 +293,7 @@ This applies to: `[...slug].astro` (both blog and pages), `index.astro` (home pa
 - wrangler-action v3 is pinned; v4's flags differ
 - The `deployment-url` output from wrangler-action is a per-commit preview URL (e.g., `abc123.my-site.pages.dev`), not the production URL — must be stripped
 - **Shell quoting in `-d` JSON**: the curl commands that create GitHub Deployments must use single-quoted JSON (`-d '{"ref":"main",...}'`). Double-quoted strings with escaped inner quotes (`-d "{\"ref\":\"main\"}"`) break because bash strips the escaping, producing invalid JSON and silently failing to create deployment statuses
+- **Deployment ID extraction**: use `jq -r '.id'` (not `grep`) to extract the deployment ID from the GitHub API response. The API returns pretty-printed JSON with spaces (`"id": 123`), which breaks `grep -o '"id":[0-9]*'`
 
 ### WP Playground Quirks
 - `writeFile` Blueprint step does NOT auto-create parent directories. Must use `mkdir` steps first.
@@ -329,7 +331,7 @@ This applies to: `[...slug].astro` (both blog and pages), `index.astro` (home pa
 2. **Image round-trip** — Images are exported to GitHub but not re-imported when loading existing content. The `fetchContent()` function fetches image metadata but doesn't download/inject them into WP Playground.
 3. **Session persistence** — PAT is stored in `sessionStorage` (lost on tab close). Consider offering `localStorage` option with a warning.
 4. **Multiple branch support** — Everything targets `main`. Some users may want `develop` or feature branches.
-5. **First-sync URL timing** — On the very first sync, the deployment URL won't be available yet (the GitHub Actions deploy hasn't run). The app shows "Deploy will start shortly" — subsequent syncs will show the URL once the first deploy creates the GitHub Deployment record.
+5. **Template versioning** — Template files (layouts, components, config) are only pushed on first sync. When the app ships updated templates (e.g., `NavMenu` support in `BaseLayout.astro`), existing repos are not updated. Consider a version check that detects stale templates and offers to update them.
 
 ### Nice to Have
 6. **Progress indicator for sync** — Show file-by-file progress during large syncs
