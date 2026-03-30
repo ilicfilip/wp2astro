@@ -391,6 +391,30 @@ if ( wp_get_theme()->get_stylesheet() !== $slug ) {
   // Ensure preview theme stays active after import (defensive)
   steps.push({ step: 'runPHP', code: activatePreviewThemePhp });
 
+  // Diagnostic: verify theme state after all blueprint steps
+  steps.push({
+    step: 'runPHP',
+    code: `<?php
+require_once '/wordpress/wp-load.php';
+$active = wp_get_theme();
+$slug = '${WP2ASTRO_PREVIEW_THEME_SLUG}';
+$target = wp_get_theme( $slug );
+$dir = WP_CONTENT_DIR . '/themes/' . $slug;
+$files = is_dir( $dir ) ? scandir( $dir ) : 'DIR_NOT_FOUND';
+$all_themes = array_keys( wp_get_themes() );
+echo json_encode( array(
+  'active_theme'    => $active->get_stylesheet(),
+  'active_name'     => $active->get( 'Name' ),
+  'target_exists'   => $target->exists(),
+  'target_dir'      => $dir,
+  'target_files'    => $files,
+  'all_themes'      => $all_themes,
+  'stylesheet_opt'  => get_option( 'stylesheet' ),
+  'template_opt'    => get_option( 'template' ),
+), JSON_PRETTY_PRINT );
+?>`
+  });
+
   // 3. Boot WP Playground
   try {
     playgroundClient = await startPlaygroundWeb({
@@ -404,6 +428,23 @@ if ( wp_get_theme()->get_stylesheet() !== $slug ) {
     });
 
     await playgroundClient.isReady();
+
+    // Diagnostic: check active theme after Playground is fully ready
+    try {
+      const diag = await playgroundClient.run({
+        code: `<?php
+require_once '/wordpress/wp-load.php';
+echo json_encode(array(
+  'active' => get_option('stylesheet'),
+  'template' => get_option('template'),
+  'theme_name' => wp_get_theme()->get('Name'),
+));
+?>`
+      });
+      console.log('[WP2Astro] Theme diagnostic:', diag.text);
+    } catch (e) {
+      console.warn('[WP2Astro] Theme diagnostic failed:', e);
+    }
 
     setLoading(null); // Hide overlay
     wpIframe.style.display = '';
