@@ -61,8 +61,45 @@ const pages = defineCollection({
 export const collections = { blog, pages };
 `,
 
+    'src/data/menu.json': `{
+  "locations": {
+    "primary": []
+  }
+}
+`,
+
+    'src/components/NavMenu.astro': `---
+import NavMenu from './NavMenu.astro';
+
+interface NavItem {
+  label: string;
+  href: string;
+  children?: NavItem[];
+}
+interface Props {
+  items: NavItem[];
+  depth?: number;
+}
+const { items, depth = 0 } = Astro.props;
+const listClass = depth === 0 ? 'nav-menu' : 'nav-submenu';
+---
+
+<ul class={listClass}>
+  {items.map((item) => (
+    <li class:list={{ 'nav-item': true, 'has-sub': !!(item.children && item.children.length) }}>
+      <a href={item.href}>{item.label}</a>
+      {item.children && item.children.length ? (
+        <NavMenu items={item.children} depth={depth + 1} />
+      ) : null}
+    </li>
+  ))}
+</ul>
+`,
+
     'src/layouts/BaseLayout.astro': `---
 import { getCollection } from 'astro:content';
+import menu from '../data/menu.json';
+import NavMenu from '../components/NavMenu.astro';
 
 interface Props {
   title: string;
@@ -70,6 +107,19 @@ interface Props {
 }
 
 const { title, description = 'Astro site powered by WordPress Playground' } = Astro.props;
+
+type NavItem = { label: string; href: string; children?: NavItem[] };
+
+function pickPrimaryNav(loc: Record<string, NavItem[] | undefined> | undefined): NavItem[] {
+  if (!loc || typeof loc !== 'object') return [];
+  if (loc.primary?.length) return loc.primary;
+  const first = Object.values(loc).find((v) => Array.isArray(v) && v.length) as NavItem[] | undefined;
+  return first ?? [];
+}
+
+const menuData = menu as { locations?: Record<string, NavItem[]> };
+const primaryItems = pickPrimaryNav(menuData.locations);
+const useWpMenu = primaryItems.length > 0;
 
 const sitePages = (await getCollection('pages', ({ data }) => !data.draft))
   .sort((a, b) => a.data.menuOrder - b.data.menuOrder);
@@ -87,12 +137,18 @@ const sitePages = (await getCollection('pages', ({ data }) => !data.draft))
     <header class="site-header">
       <div class="header-inner">
         <a href="/" class="site-title">My Site</a>
-        <nav class="nav-links">
-          <a href="/">Home</a>
-          <a href="/blog/">Blog</a>
-          {sitePages.map((page) => (
-            <a href={\`/\${page.id.replace(/\\.md$/, '')}/\`}>{page.data.title}</a>
-          ))}
+        <nav class="nav-links" aria-label="Main">
+          {useWpMenu ? (
+            <NavMenu items={primaryItems} />
+          ) : (
+            <>
+              <a href="/">Home</a>
+              <a href="/blog/">Blog</a>
+              {sitePages.map((page) => (
+                <a href={\`/\${page.id.replace(/\\.md$/, '')}/\`}>{page.data.title}</a>
+              ))}
+            </>
+          )}
         </nav>
       </div>
     </header>
@@ -166,7 +222,41 @@ const sitePages = (await getCollection('pages', ({ data }) => !data.draft))
 
   .nav-links { display: flex; gap: 0.25rem; align-items: center; }
 
-  .nav-links a {
+  .nav-menu {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 0.25rem;
+    align-items: center;
+    list-style: none;
+    margin: 0;
+    padding: 0;
+  }
+
+  .nav-item { position: relative; }
+
+  .nav-submenu {
+    display: none;
+    position: absolute;
+    top: 100%;
+    left: 0;
+    min-width: 12rem;
+    flex-direction: column;
+    gap: 0;
+    margin: 0;
+    padding: 0.5rem 0;
+    list-style: none;
+    background: rgba(26, 26, 46, 0.98);
+    border-radius: 8px;
+    box-shadow: 0 8px 24px rgba(0, 0, 0, 0.25);
+    z-index: 200;
+  }
+
+  .nav-item.has-sub:hover > .nav-submenu {
+    display: flex;
+  }
+
+  .nav-links > a,
+  .nav-menu .nav-item > a {
     text-decoration: none;
     color: rgba(255, 255, 255, 0.8);
     font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
@@ -176,7 +266,15 @@ const sitePages = (await getCollection('pages', ({ data }) => !data.draft))
     border-radius: 6px;
     transition: background 0.15s, color 0.15s;
   }
-  .nav-links a:hover {
+
+  .nav-submenu .nav-item > a {
+    font-size: 0.85rem;
+    padding: 0.35rem 1rem;
+    border-radius: 4px;
+  }
+
+  .nav-links > a:hover,
+  .nav-menu .nav-item > a:hover {
     color: #fff;
     background: rgba(255, 255, 255, 0.12);
     text-decoration-color: transparent;

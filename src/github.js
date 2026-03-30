@@ -76,10 +76,10 @@ export async function createRepo(name) {
  * Fetch content files from a repo (blog posts, pages, images).
  * @param {string} owner Repo owner.
  * @param {string} repo Repo name.
- * @returns {Promise<{posts: Object[], pages: Object[], images: Object[]}>}
+ * @returns {Promise<{posts: Object[], pages: Object[], images: Object[], menu: Object|null}>}
  */
 export async function fetchContent(owner, repo) {
-  const result = { posts: [], pages: [], images: [] };
+  const result = { posts: [], pages: [], images: [], menu: null };
 
   // Fetch blog posts
   try {
@@ -132,6 +132,21 @@ export async function fetchContent(owner, repo) {
         sha: file.sha,
         base64: imgData.content.replace(/\n/g, ''), // GitHub returns base64 with newlines
       });
+    }
+  } catch (e) {
+    if (e.status !== 404) throw e;
+  }
+
+  try {
+    const { data } = await octokit.rest.repos.getContent({
+      owner, repo, path: 'src/data/menu.json',
+    });
+    if (data.type === 'file' && data.content) {
+      const binary = atob(data.content.replace(/\n/g, ''));
+      const bytes = new Uint8Array(binary.length);
+      for (let i = 0; i < binary.length; i++) bytes[i] = binary.charCodeAt(i);
+      const text = new TextDecoder().decode(bytes);
+      result.menu = { content: text, sha: data.sha };
     }
   } catch (e) {
     if (e.status !== 404) throw e;

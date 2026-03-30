@@ -71,11 +71,18 @@ export const restApiClass = `<?php
  *   GET /astro-export/v1/page/{id}   → Single page as markdown
  *   GET /astro-export/v1/images      → List of exported images with base64 data
  *   GET /astro-export/v1/manifest    → Slugs + hashes for change detection
+ *   GET /astro-export/v1/menu        → Nav menus by theme location (for Astro)
  */
 class Astro_REST_API {
 
     public static function register_routes() {
         $ns = 'astro-export/v1';
+
+        register_rest_route( $ns, '/menu', [
+            'methods'  => 'GET',
+            'callback' => [ __CLASS__, 'get_menu' ],
+            'permission_callback' => '__return_true',
+        ]);
 
         register_rest_route( $ns, '/posts', [
             'methods'  => 'GET',
@@ -112,6 +119,105 @@ class Astro_REST_API {
             'callback' => [ __CLASS__, 'get_manifest' ],
             'permission_callback' => '__return_true',
         ]);
+    }
+
+    /**
+     * Build hierarchical menu + hash for src/data/menu.json.
+     */
+    private static function build_menu_export() {
+        $locations_out = [];
+        $assigned = get_nav_menu_locations();
+
+        if ( is_array( $assigned ) ) {
+            foreach ( $assigned as $location => $menu_id ) {
+                if ( ! $menu_id ) {
+                    continue;
+                }
+                $items = wp_get_nav_menu_items( $menu_id );
+                $locations_out[ $location ] = $items ? self::build_menu_tree( $items, 0 ) : [];
+            }
+        }
+
+        if ( empty( $locations_out ) ) {
+            $menus = wp_get_nav_menus();
+            if ( ! empty( $menus ) ) {
+                $items = wp_get_nav_menu_items( $menus[0]->term_id );
+                $locations_out['primary'] = $items ? self::build_menu_tree( $items, 0 ) : [];
+            } else {
+                $locations_out['primary'] = [];
+            }
+        }
+
+        $export = [ 'locations' => $locations_out ];
+        $json   = wp_json_encode( $export, JSON_UNESCAPED_SLASHES | JSON_UNESCAPED_UNICODE );
+
+        return [
+            'locations' => $locations_out,
+            'hash'      => md5( $json ),
+        ];
+    }
+
+    /**
+     * @param array $items Flat list from wp_get_nav_menu_items.
+     * @param int   $parent_id Parent menu item ID (0 = top level).
+     */
+    private static function build_menu_tree( $items, $parent_id ) {
+        $branch = [];
+
+        foreach ( $items as $item ) {
+            if ( (int) $item->menu_item_parent !== (int) $parent_id ) {
+                continue;
+            }
+
+            $entry = [
+                'label' => $item->title,
+                'href'  => self::normalize_menu_url( $item->url ),
+            ];
+
+            $children = self::build_menu_tree( $items, (int) $item->ID );
+            if ( ! empty( $children ) ) {
+                $entry['children'] = $children;
+            }
+
+            $branch[] = $entry;
+        }
+
+        return $branch;
+    }
+
+    /**
+     * Internal URLs become path-only (with trailing slash). External links unchanged.
+     */
+    private static function normalize_menu_url( $url ) {
+        if ( empty( $url ) || $url === '#' ) {
+            return '#';
+        }
+
+        $url = trim( $url );
+
+        if ( strpos( $url, 'http' ) !== 0 && strpos( $url, '//' ) !== 0 ) {
+            $path = $url[0] === '/' ? $url : '/' . $url;
+            return $path === '/' ? '/' : trailingslashit( $path );
+        }
+
+        $site   = wp_parse_url( home_url() );
+        $parsed = wp_parse_url( $url );
+
+        if ( ! empty( $parsed['host'] ) && ! empty( $site['host'] )
+            && strtolower( $parsed['host'] ) === strtolower( $site['host'] ) ) {
+            $path = isset( $parsed['path'] ) ? $parsed['path'] : '/';
+            $path = '/' . trim( $path, '/' );
+            if ( $path === '/' ) {
+                return '/';
+            }
+            return trailingslashit( $path );
+        }
+
+        return $url;
+    }
+
+    public static function get_menu() {
+        return self::build_menu_export();
     }
 
     /**
@@ -252,6 +358,9 @@ class Astro_REST_API {
                 }
             }
         }
+
+        $menu = self::build_menu_export();
+        $manifest['src/data/menu.json'] = $menu['hash'];
 
         return $manifest;
     }

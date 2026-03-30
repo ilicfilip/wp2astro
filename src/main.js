@@ -259,7 +259,7 @@ async function bootEditor() {
   try {
     existingContent = await github.fetchContent(selectedRepo.owner, selectedRepo.name);
   } catch (e) {
-    existingContent = { posts: [], pages: [], images: [] };
+    existingContent = { posts: [], pages: [], images: [], menu: null };
   }
 
   // Seed the content manifest from repo so deletions can be detected on first sync
@@ -271,6 +271,9 @@ async function bootEditor() {
   }
   for (const img of existingContent.images) {
     contentManifest[`public/assets/images/${img.name}`] = img.sha;
+  }
+  if (existingContent.menu) {
+    contentManifest['src/data/menu.json'] = existingContent.menu.sha;
   }
   contentManifest._templatePushed = true; // repo already has templates if content exists
 
@@ -435,15 +438,19 @@ async function syncToGitHub() {
     // 1. Fetch current content from WP via REST API
     //    Use playgroundClient.request() to avoid CORS — it routes
     //    through the iframe's service worker, not a cross-origin fetch.
-    const [postsRes, pagesRes, imagesRes] = await Promise.all([
+    const [postsRes, pagesRes, imagesRes, menuRes] = await Promise.all([
       playgroundClient.request({ url: '/wp-json/astro-export/v1/posts', method: 'GET' }),
       playgroundClient.request({ url: '/wp-json/astro-export/v1/pages', method: 'GET' }),
       playgroundClient.request({ url: '/wp-json/astro-export/v1/images', method: 'GET' }),
+      playgroundClient.request({ url: '/wp-json/astro-export/v1/menu', method: 'GET' }),
     ]);
 
     const posts  = JSON.parse(postsRes.text);
     const pages  = JSON.parse(pagesRes.text);
     const images = JSON.parse(imagesRes.text);
+    const menuPayload = JSON.parse(menuRes.text);
+    const menuPath = 'src/data/menu.json';
+    const menuJson = JSON.stringify({ locations: menuPayload.locations }, null, 2);
 
     // 2. Ensure template/scaffold files exist in the repo.
     //    On first sync (or if initial commit failed), push them.
@@ -484,6 +491,11 @@ async function syncToGitHub() {
         files[img.path] = `base64:${img.base64}`;
         changeCount++;
       }
+    }
+
+    if (contentManifest[menuPath] !== menuPayload.hash) {
+      files[menuPath] = menuJson;
+      changeCount++;
     }
 
     // 2b. Detect deleted content (in manifest but no longer in WP)
@@ -540,6 +552,7 @@ async function syncToGitHub() {
     for (const img of images) {
       contentManifest[img.path] = img.hash;
     }
+    contentManifest[menuPath] = menuPayload.hash;
     // Remove deleted paths from manifest
     for (const path of deletePaths) {
       delete contentManifest[path];
