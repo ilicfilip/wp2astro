@@ -89,7 +89,7 @@ GitHub API wrapper using Octokit. Key functions:
 - `connect(token)` — Initialize Octokit, return authenticated user
 - `listRepos()` — All repos user can push to (paginated, max 100)
 - `createRepo(name)` — Create with `auto_init: true` (template files pushed on first sync)
-- `detectContentRoot(owner, repo)` — Auto-detects the Astro project root within the repo. Looks for `astro.config.mjs`/`.ts` at root first, then checks subdirectories. Returns `''` for root-level projects or `'subdir/'` for nested ones (e.g., `'src-astro/'`). All content paths are prefixed with this root.
+- `detectContentRoot(owner, repo)` — Auto-detects the Astro project root within the repo. Uses the git tree API (single request, no 404 noise) to find `astro.config.mjs`/`.ts` anywhere in the tree. Returns `''` for root-level projects or `'subdir/'` for nested ones (e.g., `'src-astro/'`). All content paths are prefixed with this root.
 - `fetchContent(owner, repo, contentRoot='')` — Fetch existing blog posts, pages, images, and `src/data/menu.json` from repo, using `contentRoot` prefix for all paths. Returns `{ posts, pages, images, menu }` (`menu` is `null` if the file is missing)
 - `fetchTemplateVersion(owner, repo, contentRoot='')` — Reads `<contentRoot>.astro-wp-version` from the repo. Returns `{ template, version }` or `{ template: 'default', version: 0 }` if the file is missing (unversioned repo)
 - `commitFiles(owner, repo, branch, files, message, deletePaths=[])` — **Uses GraphQL `createCommitOnBranch` mutation**. HEAD OID fetched via GraphQL (not REST — avoids stale cache). `files` is `{ path: content }` for additions. `deletePaths` is `string[]` of paths to delete. Both are passed in `fileChanges: { additions, deletions }`.
@@ -351,6 +351,8 @@ To use WP-managed navigation, import this JSON in your header/nav component and 
 3. Ensure `public/assets/images/` exists (or add `.gitkeep`)
 4. Optionally: import `src/data/menu.json` in your nav component for WP-managed navigation
 5. Connect the repo through the app — it will detect it as a custom site and sync content only
+6. If your Astro project is in a subdirectory (e.g., `src-astro/`), the app auto-detects this via `astro.config.*` — no extra config needed. However, if using the app's deploy workflow, you'll need to manually set `working-directory` and adjust the wrangler deploy path (see Deploy Workflow Gotchas)
+7. Ensure your deploy workflow uses **Node.js 22+** (Astro 6 requirement)
 
 ---
 
@@ -381,6 +383,8 @@ Detection logic (`bootEditor()`): if `fetchContent()` finds existing posts/pages
 - **IMPORTANT — when changing any template file in `src/template.js`, you MUST bump `TEMPLATE_VERSION` in the same file.** This is what triggers existing repos to receive the updated templates on their next sync. Forgetting to bump means stale repos stay stale.
 
 ### Deploy Workflow Gotchas
+- **Node.js 22+ required** — Astro 6 needs Node >= 22.12.0. The deploy workflow uses `node-version: 22`. Node 20 will fail with "Node.js v20.x is not supported by Astro!"
+- For repos with Astro in a subdirectory (e.g., `src-astro/`), the workflow needs `defaults: run: working-directory: <subdir>` and the wrangler deploy path adjusted to `<subdir>/dist`
 - Must use `npm install` (not `npm ci`) because no `package-lock.json` is committed to the repo
 - The `--create-project` flag does not exist in wrangler v3 — project must be created via the CF API before deploying
 - wrangler-action v3 is pinned; v4's flags differ
