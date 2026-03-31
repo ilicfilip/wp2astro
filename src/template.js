@@ -5,8 +5,14 @@
  * Minimal Astro project with blog + pages content collections.
  */
 
+/** Bump this whenever template files change so existing repos get updated on next sync. */
+export const TEMPLATE_VERSION = 2;
+export const TEMPLATE_NAME = 'default';
+
 export function getTemplateFiles() {
   return {
+    '.astro-wp-version': JSON.stringify({ template: TEMPLATE_NAME, version: TEMPLATE_VERSION }, null, 2),
+
     'package.json': JSON.stringify({
       name: 'astro-wp-site',
       type: 'module',

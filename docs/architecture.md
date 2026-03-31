@@ -90,6 +90,7 @@ GitHub API wrapper using Octokit. Key functions:
 - `listRepos()` — All repos user can push to (paginated, max 100)
 - `createRepo(name)` — Create with `auto_init: true` (template files pushed on first sync)
 - `fetchContent(owner, repo)` — Fetch existing blog posts, pages, images, and `src/data/menu.json` from repo. Returns `{ posts, pages, images, menu }` (`menu` is `null` if the file is missing)
+- `fetchTemplateVersion(owner, repo)` — Reads `.astro-wp-version` from the repo. Returns `{ template, version }` or `{ template: 'default', version: 0 }` if the file is missing (unversioned repo)
 - `commitFiles(owner, repo, branch, files, message, deletePaths=[])` — **Uses GraphQL `createCommitOnBranch` mutation**. HEAD OID fetched via GraphQL (not REST — avoids stale cache). `files` is `{ path: content }` for additions. `deletePaths` is `string[]` of paths to delete. Both are passed in `fileChanges: { additions, deletions }`.
 - `setRepoSecret(owner, repo, name, value)` — Encrypt with NaCl sealed box, set via Actions secrets API
 - `getDeploymentUrl(owner, repo)` — Searches recent GitHub Deployments for any with a `.pages.dev` URL. Strips per-commit hash prefix (e.g., `abc123.my-site.pages.dev` → `my-site.pages.dev`). Returns the production URL or `null`.
@@ -110,7 +111,7 @@ WP plugin PHP code as JS string exports:
 **Important:** The `mainPlugin` string must `require_once` all 6 class files including `class-md-to-blocks.php` and `class-md-importer.php`. Without these, the content importer silently fails (`class_exists('Astro_MD_Importer')` returns false).
 
 ### `src/template.js`
-`getTemplateFiles()` returns a `{ path: content }` map of all Astro site scaffold files committed to the user's repo on first sync:
+`getTemplateFiles()` returns a `{ path: content }` map of all Astro site scaffold files committed to the user's repo on first sync (and re-pushed when the template version changes). Also exports `TEMPLATE_VERSION` (integer, bump on any template change) and `TEMPLATE_NAME` (`'default'`):
 
 **Config files:**
 - `package.json` — Astro 5 dependency, build/dev/preview scripts
@@ -145,6 +146,7 @@ See "Deploy Workflow & Site URL Resolution" section for full details.
 **Placeholder files:**
 - `src/content/blog/.gitkeep`, `src/content/pages/.gitkeep`, `public/assets/images/.gitkeep`
 - `src/data/menu.json` — Default `{ "locations": { "primary": [] } }` until the first menu sync overwrites it
+- `.astro-wp-version` — `{ "template": "default", "version": <TEMPLATE_VERSION> }` — used to detect stale templates and trigger re-push on sync
 
 ### `src/wp-theme.js`
 Minimal **classic** theme **`wp2astro-preview`** (written into Playground at `/wordpress/wp-content/themes/wp2astro-preview/`). Exported via `getWp2AstroPreviewThemeFiles()` and activated with a Blueprint **`runPHP`** step that calls `switch_theme()` using `WP_CONTENT_DIR` (same `/wordpress/` layout as other steps — the stock `activateTheme` step keys off `documentRoot` and can miss the theme path in some Playground builds). Registers a single **`primary`** menu location so **Appearance → Menus** is available. Includes simple `index.php`, `single.php`, `page.php`, `header.php`, `footer.php`, and a short footer note that the public site is Astro. A pre-made `screenshot.png` is embedded as base64 in `src/assets/theme-screenshot-b64.js` and written via a `runPHP` step (`getWp2AstroPreviewScreenshotStep()`). Not committed to the user’s GitHub Astro repo — only lives in the Playground VM.
@@ -285,7 +287,7 @@ This applies to: `[...slug].astro` (both blog and pages), `index.astro` (home pa
 - `.github/workflows/deploy.yml` is pushed separately when user saves CF credentials
 - The `_templatePushed` flag is set AFTER commit succeeds (was a bug before — setting it before meant retries would skip templates)
 - If the repo already has content (detected by `fetchContent()`), `_templatePushed` is set during boot to avoid re-pushing templates
-- **No template versioning yet:** templates are only pushed once on first sync. If the app ships updated templates (e.g., `BaseLayout.astro` gaining `NavMenu` support), existing repos do not receive the update automatically. Currently requires a manual push to update templates in existing repos.
+- **Template versioning:** A `.astro-wp-version` file in the repo tracks `{ "template": "<name>", "version": <int> }`. On boot, `fetchTemplateVersion()` reads this file (returns version `0` if missing). During sync, if the repo's version is lower than the app's `TEMPLATE_VERSION` (exported from `template.js`), all template files are re-pushed. The `template` field identifies which template set was used (currently only `"default"`); this future-proofs for multiple template choices without structural changes. Bump `TEMPLATE_VERSION` in `template.js` whenever template files change.
 
 ### Deploy Workflow Gotchas
 - Must use `npm install` (not `npm ci`) because no `package-lock.json` is committed to the repo
@@ -331,7 +333,7 @@ This applies to: `[...slug].astro` (both blog and pages), `index.astro` (home pa
 2. **Image round-trip** — Images are exported to GitHub but not re-imported when loading existing content. The `fetchContent()` function fetches image metadata but doesn't download/inject them into WP Playground.
 3. **Session persistence** — PAT is stored in `sessionStorage` (lost on tab close). Consider offering `localStorage` option with a warning.
 4. **Multiple branch support** — Everything targets `main`. Some users may want `develop` or feature branches.
-5. **Template versioning** — Template files (layouts, components, config) are only pushed on first sync. When the app ships updated templates (e.g., `NavMenu` support in `BaseLayout.astro`), existing repos are not updated. Consider a version check that detects stale templates and offers to update them.
+5. **Multiple template sets** — Currently only one template (`"default"`). The `.astro-wp-version` file already includes a `template` field to identify the set. To add a new template: create its `getTemplateFiles()` variant, give it its own version counter, and route by the `template` name read from the repo.
 
 ### Nice to Have
 6. **Progress indicator for sync** — Show file-by-file progress during large syncs

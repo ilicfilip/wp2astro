@@ -7,7 +7,7 @@
 import { startPlaygroundWeb } from '@wp-playground/client';
 import * as github from './github.js';
 import { getPluginFiles } from './plugin.js';
-import { getTemplateFiles } from './template.js';
+import { getTemplateFiles, TEMPLATE_VERSION } from './template.js';
 import { getWp2AstroPreviewThemeFiles, getWp2AstroPreviewScreenshotStep, WP2ASTRO_PREVIEW_THEME_SLUG } from './wp-theme.js';
 import {
   markdownConverter,
@@ -278,6 +278,15 @@ async function bootEditor() {
   if (existingContent.menu) {
     contentManifest['src/data/menu.json'] = existingContent.menu.sha;
   }
+  // Check template version for update detection
+  let repoTemplate;
+  try {
+    repoTemplate = await github.fetchTemplateVersion(selectedRepo.owner, selectedRepo.name);
+  } catch (e) {
+    repoTemplate = { template: 'default', version: 0 };
+  }
+  contentManifest._templateVersion = repoTemplate.version;
+  contentManifest._templateName = repoTemplate.template;
   contentManifest._templatePushed = true; // repo already has templates if content exists
 
   // 2. Build blueprint with plugin files + existing content
@@ -650,12 +659,13 @@ async function syncToGitHub() {
     const menuPath = 'src/data/menu.json';
     const menuJson = JSON.stringify({ locations: menuPayload.locations }, null, 2);
 
-    // 2. Ensure template/scaffold files exist in the repo.
-    //    On first sync (or if initial commit failed), push them.
+    // 2. Ensure template/scaffold files exist in the repo (first sync or version update).
     const files = {};
     let changeCount = 0;
+    const needsTemplateUpdate = !contentManifest._templatePushed
+      || contentManifest._templateVersion < TEMPLATE_VERSION;
 
-    if (!contentManifest._templatePushed) {
+    if (needsTemplateUpdate) {
       const templateFiles = getTemplateFiles();
       for (const [path, content] of Object.entries(templateFiles)) {
         // Skip empty .gitkeep files and the deploy workflow
@@ -665,7 +675,7 @@ async function syncToGitHub() {
           changeCount++;
         }
       }
-      // NOTE: flag is set AFTER commit succeeds (see below)
+      // NOTE: flags are set AFTER commit succeeds (see below)
     }
 
     for (const post of posts) {
@@ -737,8 +747,9 @@ async function syncToGitHub() {
       deletePaths
     );
 
-    // 4. Mark template as pushed (only after commit succeeds)
+    // 4. Mark template as pushed and up-to-date (only after commit succeeds)
     contentManifest._templatePushed = true;
+    contentManifest._templateVersion = TEMPLATE_VERSION;
 
     // 5. Update local manifest
     for (const post of posts) {

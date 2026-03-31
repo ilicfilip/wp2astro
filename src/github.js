@@ -156,6 +156,23 @@ export async function fetchContent(owner, repo) {
 }
 
 /**
+ * Fetch the template version from the repo's .astro-wp-version file.
+ * Returns { template, version } or { template: 'default', version: 0 } if missing.
+ */
+export async function fetchTemplateVersion(owner, repo) {
+  try {
+    const { data } = await octokit.rest.repos.getContent({
+      owner, repo, path: '.astro-wp-version',
+    });
+    const content = JSON.parse(atob(data.content));
+    return { template: content.template || 'default', version: content.version || 0 };
+  } catch (e) {
+    if (e.status === 404) return { template: 'default', version: 0 };
+    throw e;
+  }
+}
+
+/**
  * Commit multiple files to a repo in a single commit.
  *
  * Uses the Git Trees API to batch everything into one commit.
