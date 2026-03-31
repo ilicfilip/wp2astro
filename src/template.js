@@ -6,7 +6,7 @@
  */
 
 /** Bump this whenever template files change so existing repos get updated on next sync. */
-export const TEMPLATE_VERSION = 3;
+export const TEMPLATE_VERSION = 4;
 export const TEMPLATE_NAME = 'default';
 
 export function getTemplateFiles() {
@@ -783,7 +783,7 @@ jobs:
 
       - uses: actions/setup-node@v4
         with:
-          node-version: 20
+          node-version: 22
 
       - run: npm install
       - run: npm run build
