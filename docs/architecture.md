@@ -287,7 +287,8 @@ This applies to: `[...slug].astro` (both blog and pages), `index.astro` (home pa
 - `.github/workflows/deploy.yml` is pushed separately when user saves CF credentials
 - The `_templatePushed` flag is set AFTER commit succeeds (was a bug before — setting it before meant retries would skip templates)
 - If the repo already has content (detected by `fetchContent()`), `_templatePushed` is set during boot to avoid re-pushing templates
-- **Template versioning:** A `.astro-wp-version` file in the repo tracks `{ "template": "<name>", "version": <int> }`. On boot, `fetchTemplateVersion()` reads this file (returns version `0` if missing). During sync, if the repo's version is lower than the app's `TEMPLATE_VERSION` (exported from `template.js`), all template files are re-pushed. The `template` field identifies which template set was used (currently only `"default"`); this future-proofs for multiple template choices without structural changes. Bump `TEMPLATE_VERSION` in `template.js` whenever template files change.
+- **Template versioning:** A `.astro-wp-version` file in the repo tracks `{ "template": "<name>", "version": <int> }`. On boot, `fetchTemplateVersion()` reads this file (returns version `0` if missing). During sync, if the repo's version is lower than the app's `TEMPLATE_VERSION` (exported from `template.js`), all template files are re-pushed. The `template` field identifies which template set was used (currently only `"default"`); this future-proofs for multiple template choices without structural changes.
+- **IMPORTANT — when changing any template file in `src/template.js`, you MUST bump `TEMPLATE_VERSION` in the same file.** This is what triggers existing repos to receive the updated templates on their next sync. Forgetting to bump means stale repos stay stale.
 
 ### Deploy Workflow Gotchas
 - Must use `npm install` (not `npm ci`) because no `package-lock.json` is committed to the repo
