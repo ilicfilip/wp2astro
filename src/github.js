@@ -84,32 +84,18 @@ export async function createRepo(name) {
  * Looks for astro.config.mjs/ts at root, then checks subdirectories.
  */
 export async function detectContentRoot(owner, repo) {
-  // Check if astro.config exists at root
-  for (const name of ['astro.config.mjs', 'astro.config.ts']) {
-    try {
-      await octokit.rest.repos.getContent({ owner, repo, path: name });
-      return ''; // Astro project at root
-    } catch (e) {
-      if (e.status !== 404) throw e;
-    }
-  }
-
-  // List root directory and check subdirectories for astro.config
+  // Use git tree API to find astro.config.* in a single request (no 404 noise)
   try {
-    const { data: rootEntries } = await octokit.rest.repos.getContent({ owner, repo, path: '' });
-    for (const entry of rootEntries) {
-      if (entry.type !== 'dir') continue;
-      for (const name of ['astro.config.mjs', 'astro.config.ts']) {
-        try {
-          await octokit.rest.repos.getContent({ owner, repo, path: `${entry.name}/${name}` });
-          return `${entry.name}/`; // Found Astro project in subdirectory
-        } catch (e) {
-          if (e.status !== 404) throw e;
-        }
-      }
+    const { data } = await octokit.rest.git.getTree({ owner, repo, tree_sha: 'main', recursive: 'true' });
+    const configFile = data.tree.find(f =>
+      /^(.*\/)?astro\.config\.(mjs|ts)$/.test(f.path)
+    );
+    if (configFile) {
+      const dir = configFile.path.replace(/astro\.config\.(mjs|ts)$/, '');
+      return dir; // '' for root, 'src-astro/' for subdirectory
     }
   } catch (e) {
-    // Couldn't list root — fall back to default
+    // Fall back to default
   }
 
   return ''; // Default: assume root
