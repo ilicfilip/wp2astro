@@ -29,7 +29,7 @@ Exporter PHP lives in **`php-classes/`** at the root of this repo. At build time
 | CMS | WordPress Playground (in-browser, runs in iframe) |
 | Build tool | Vite |
 | Content format | Markdown with YAML frontmatter |
-| Static site | Astro 5 (content collections: `blog` + `pages`; header nav from `src/data/menu.json` when synced) |
+| Static site | Astro 6 (content collections with Content Layer API: `blog` + `pages`; header nav from `src/data/menu.json` when synced) |
 | Git API | GitHub GraphQL (`createCommitOnBranch` mutation) |
 | Secrets encryption | tweetnacl + blakejs (NaCl sealed box) |
 | Deploy | GitHub Actions → Cloudflare Pages via wrangler-action |
@@ -89,8 +89,9 @@ GitHub API wrapper using Octokit. Key functions:
 - `connect(token)` — Initialize Octokit, return authenticated user
 - `listRepos()` — All repos user can push to (paginated, max 100)
 - `createRepo(name)` — Create with `auto_init: true` (template files pushed on first sync)
-- `fetchContent(owner, repo)` — Fetch existing blog posts, pages, images, and `src/data/menu.json` from repo. Returns `{ posts, pages, images, menu }` (`menu` is `null` if the file is missing)
-- `fetchTemplateVersion(owner, repo)` — Reads `.astro-wp-version` from the repo. Returns `{ template, version }` or `{ template: 'default', version: 0 }` if the file is missing (unversioned repo)
+- `detectContentRoot(owner, repo)` — Auto-detects the Astro project root within the repo. Looks for `astro.config.mjs`/`.ts` at root first, then checks subdirectories. Returns `''` for root-level projects or `'subdir/'` for nested ones (e.g., `'src-astro/'`). All content paths are prefixed with this root.
+- `fetchContent(owner, repo, contentRoot='')` — Fetch existing blog posts, pages, images, and `src/data/menu.json` from repo, using `contentRoot` prefix for all paths. Returns `{ posts, pages, images, menu }` (`menu` is `null` if the file is missing)
+- `fetchTemplateVersion(owner, repo, contentRoot='')` — Reads `<contentRoot>.astro-wp-version` from the repo. Returns `{ template, version }` or `{ template: 'default', version: 0 }` if the file is missing (unversioned repo)
 - `commitFiles(owner, repo, branch, files, message, deletePaths=[])` — **Uses GraphQL `createCommitOnBranch` mutation**. HEAD OID fetched via GraphQL (not REST — avoids stale cache). `files` is `{ path: content }` for additions. `deletePaths` is `string[]` of paths to delete. Both are passed in `fileChanges: { additions, deletions }`.
 - `setRepoSecret(owner, repo, name, value)` — Encrypt with NaCl sealed box, set via Actions secrets API
 - `getDeploymentUrl(owner, repo)` — Searches recent GitHub Deployments for any with a `.pages.dev` URL. Strips per-commit hash prefix (e.g., `abc123.my-site.pages.dev` → `my-site.pages.dev`). Returns the production URL or `null`.
@@ -114,13 +115,15 @@ WP plugin PHP code as JS string exports:
 `getTemplateFiles()` returns a `{ path: content }` map of all Astro site scaffold files committed to the user's repo on first sync (and re-pushed when the template version changes). Also exports `TEMPLATE_VERSION` (integer, bump on any template change) and `TEMPLATE_NAME` (`'default'`):
 
 **Config files:**
-- `package.json` — Astro 5 dependency, build/dev/preview scripts
+- `package.json` — Astro 6 dependency, build/dev/preview scripts
 - `astro.config.mjs` — Minimal `defineConfig({})`
 - `tsconfig.json` — Extends `astro/tsconfigs/strict`
 
-**Content collections (`src/content/config.ts`):**
-- `blog` collection — schema: title, description, pubDate, updatedDate, author, categories, tags, heroImage, draft
-- `pages` collection — schema: title, description, updatedDate, menuOrder, heroImage, draft
+**Content collections (`src/content.config.ts`):**
+- Uses Astro 6 Content Layer API with `glob()` loader
+- `blog` collection — `glob({ base: './src/content/blog', pattern: '**/*.{md,mdx}' })` — schema: title, description, pubDate, updatedDate, author, categories, tags, heroImage, draft
+- `pages` collection — `glob({ base: './src/content/pages', pattern: '**/*.{md,mdx}' })` — schema: title, description, updatedDate, menuOrder, heroImage, draft
+- `z` imported from `astro/zod` (Astro 6 change from `astro:content`)
 
 **Site navigation (`src/data/menu.json` + components):**
 - Committed JSON shape: `{ "locations": { "primary": [...], ... } }`. Sync writes pretty-printed JSON; the REST `hash` is derived from WordPress’s compact JSON of the same structure.
@@ -135,10 +138,8 @@ WP plugin PHP code as JS string exports:
 **Pages:**
 - `index.astro` — Hero section with gradient background, CTA button linking to `/blog/`. Card-based "Recent Posts" section (latest 5). Empty state with dashed border.
 - `blog/index.astro` — Header with title + post count. Card-based listing with title, excerpt, date, author, animated arrow. Empty state.
-- `blog/[...slug].astro` — Dynamic blog post routes. Uses `getStaticPaths()` with slug derived from `post.id.replace(/\.md$/, '')`.
-- `[...slug].astro` — Dynamic page routes. Same slug derivation.
-
-**All slug references must strip `.md` extension** — see "Astro 5 Content Collection Gotchas" section.
+- `blog/[...slug].astro` — Dynamic blog post routes. Uses `getStaticPaths()` with `post.id` as slug (Astro 6 glob loader returns clean IDs without `.md` extension).
+- `[...slug].astro` — Dynamic page routes. Same pattern.
 
 **Deploy workflow (`.github/workflows/deploy.yml`):**
 See "Deploy Workflow & Site URL Resolution" section for full details.
@@ -261,17 +262,95 @@ The `GITHUB_TOKEN` is automatically provided. CF credentials come from repo secr
 
 ---
 
-## Astro 5 Content Collection Gotchas
+## Astro 6 Content Layer Migration
 
-### `.md` Extension in Slugs
+Templates use Astro 6's Content Layer API. Key differences from Astro 5:
 
-In Astro 5, `post.id` includes the file extension (e.g., `hello-world.md`), unlike Astro 4 where it was just `hello-world`. All template files that use `post.id` or `page.id` as URL slugs must strip the extension:
+- **Config location**: `src/content.config.ts` (was `src/content/config.ts`). Template updates automatically delete the old file.
+- **Glob loader**: Collections use `loader: glob({ base, pattern })` instead of `type: 'content'`.
+- **Zod import**: `import { z } from 'astro/zod'` (was `from 'astro:content'`).
+- **Clean IDs**: `post.id` returns `hello-world` (no `.md` extension), so no stripping needed.
+- **`render()`**: Standalone function `import { render } from 'astro:content'` (already used in Astro 5 templates).
 
-```js
-params: { slug: post.id.replace(/\.md$/, '') }
+---
+
+## Using with Custom Astro Sites
+
+The app can sync content into any Astro site — not just repos created through the app. When a repo already has content but no `.astro-wp-version` file, the app runs in **content-only mode**: it pushes blog posts, pages, images, and menus without touching templates, layouts, styles, or config.
+
+**Subdirectory support:** The Astro project doesn't need to be at the repo root. On boot, `detectContentRoot()` searches for `astro.config.mjs`/`.ts` — if found in a subdirectory (e.g., `src-astro/`), all content paths are automatically prefixed. No configuration needed.
+
+### What the app syncs
+
+All paths below are relative to the detected content root (e.g., `src-astro/` or repo root).
+
+| Content | Repo path | Format |
+|---------|-----------|--------|
+| Blog posts | `src/content/blog/<slug>.md` | Markdown with YAML frontmatter |
+| Pages | `src/content/pages/<slug>.md` | Markdown with YAML frontmatter |
+| Images | `public/assets/images/<filename>` | Binary (base64-committed) |
+| Navigation menus | `src/data/menu.json` | JSON |
+
+### What the app does NOT touch
+
+Layouts, components, styles, `package.json`, `astro.config.*`, `src/content.config.ts`, `.github/workflows/`, or any other file outside the content paths above.
+
+### Requirements for custom repos
+
+**Content collections** — The site's content config must define `blog` and `pages` collections that accept the frontmatter the exporter produces. All fields use `.optional().default()` so the site can ignore any it doesn't need, but the exporter will always include them.
+
+Blog post frontmatter:
+```yaml
+title: string        # required
+description: string
+pubDate: date        # required
+updatedDate: date
+author: string       # default: "Admin"
+categories: string[]
+tags: string[]
+heroImage: string    # path to image in public/assets/images/
+draft: boolean
 ```
 
-This applies to: `[...slug].astro` (both blog and pages), `index.astro` (home page links), `blog/index.astro` (post links), and `BaseLayout.astro` (page nav links).
+Page frontmatter:
+```yaml
+title: string        # required
+description: string
+updatedDate: date
+menuOrder: number    # for nav ordering
+heroImage: string
+draft: boolean
+```
+
+**Images** — Referenced in frontmatter as `/assets/images/<filename>`. The app commits images to `public/assets/images/`. If your site uses a different image directory (e.g., `src/assets/images/`), you'll need to adjust your content references or add a redirect.
+
+**Navigation menus** — The app writes `src/data/menu.json` with this shape:
+```json
+{
+  "locations": {
+    "primary": [
+      {
+        "label": "About",
+        "href": "/about/",
+        "target": "_blank",
+        "title": "About us",
+        "classes": ["highlight", "cta"],
+        "rel": "noopener",
+        "children": []
+      }
+    ]
+  }
+}
+```
+To use WP-managed navigation, import this JSON in your header/nav component and render the items. All fields except `label` and `href` are optional. The `primary` location is used when a WP menu is assigned to the theme's primary location; otherwise the first menu becomes `primary`.
+
+### Adapting an existing site (checklist)
+
+1. Ensure `src/content/blog/` and `src/content/pages/` directories exist
+2. Add or update content config with compatible `blog` and `pages` collections (see frontmatter fields above)
+3. Ensure `public/assets/images/` exists (or add `.gitkeep`)
+4. Optionally: import `src/data/menu.json` in your nav component for WP-managed navigation
+5. Connect the repo through the app — it will detect it as a custom site and sync content only
 
 ---
 
@@ -282,12 +361,23 @@ This applies to: `[...slug].astro` (both blog and pages), `index.astro` (home pa
 - `workflow` scope: Required ONLY for pushing `.github/workflows/` files. Without it, GitHub returns a permissions error on the GraphQL mutation. The app handles this by pushing deploy.yml separately during the CF setup step (not during normal sync).
 
 ### Template Push Strategy
+
+The app detects three repo states and handles templates accordingly:
+
+| State | `.astro-wp-version` | Has content? | Behavior |
+|-------|---------------------|-------------|----------|
+| New empty repo | missing | no | Push default templates + content |
+| App-managed repo | present | yes | Push updated templates if version outdated + content |
+| Custom repo | missing | yes | **Content-only sync** — never push templates |
+
+Detection logic (`bootEditor()`): if `fetchContent()` finds existing posts/pages/images **and** `fetchTemplateVersion()` returns version 0 (no `.astro-wp-version`), the repo is marked as custom (`_isCustomRepo = true`).
+
+**App-managed repos:**
 - Repo is created with `auto_init: true` (just a README)
 - Template files are pushed on FIRST sync (flag: `contentManifest._templatePushed`)
 - `.github/workflows/deploy.yml` is pushed separately when user saves CF credentials
 - The `_templatePushed` flag is set AFTER commit succeeds (was a bug before — setting it before meant retries would skip templates)
-- If the repo already has content (detected by `fetchContent()`), `_templatePushed` is set during boot to avoid re-pushing templates
-- **Template versioning:** A `.astro-wp-version` file in the repo tracks `{ "template": "<name>", "version": <int> }`. On boot, `fetchTemplateVersion()` reads this file (returns version `0` if missing). During sync, if the repo's version is lower than the app's `TEMPLATE_VERSION` (exported from `template.js`), all template files are re-pushed. The `template` field identifies which template set was used (currently only `"default"`); this future-proofs for multiple template choices without structural changes.
+- **Template versioning:** A `.astro-wp-version` file in the repo tracks `{ "template": "<name>", "version": <int> }`. On boot, `fetchTemplateVersion()` reads this file. During sync, if the repo's version is lower than the app's `TEMPLATE_VERSION` (exported from `template.js`), all template files are re-pushed. The `template` field identifies which template set was used (currently only `"default"`); this future-proofs for multiple template choices without structural changes.
 - **IMPORTANT — when changing any template file in `src/template.js`, you MUST bump `TEMPLATE_VERSION` in the same file.** This is what triggers existing repos to receive the updated templates on their next sync. Forgetting to bump means stale repos stay stale.
 
 ### Deploy Workflow Gotchas

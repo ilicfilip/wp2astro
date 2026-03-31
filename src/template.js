@@ -6,7 +6,7 @@
  */
 
 /** Bump this whenever template files change so existing repos get updated on next sync. */
-export const TEMPLATE_VERSION = 2;
+export const TEMPLATE_VERSION = 3;
 export const TEMPLATE_NAME = 'default';
 
 export function getTemplateFiles() {
@@ -23,7 +23,7 @@ export function getTemplateFiles() {
         preview: 'astro preview',
       },
       dependencies: {
-        astro: '^5.0.0',
+        astro: '^6.0.0',
       },
     }, null, 2),
 
@@ -35,10 +35,12 @@ export default defineConfig({});
       extends: 'astro/tsconfigs/strict',
     }, null, 2),
 
-    'src/content/config.ts': `import { defineCollection, z } from 'astro:content';
+    'src/content.config.ts': `import { defineCollection } from 'astro:content';
+import { glob } from 'astro/loaders';
+import { z } from 'astro/zod';
 
 const blog = defineCollection({
-  type: 'content',
+  loader: glob({ base: './src/content/blog', pattern: '**/*.{md,mdx}' }),
   schema: z.object({
     title: z.string(),
     description: z.string().optional().default(''),
@@ -53,7 +55,7 @@ const blog = defineCollection({
 });
 
 const pages = defineCollection({
-  type: 'content',
+  loader: glob({ base: './src/content/pages', pattern: '**/*.{md,mdx}' }),
   schema: z.object({
     title: z.string(),
     description: z.string().optional().default(''),
@@ -158,7 +160,7 @@ const sitePages = (await getCollection('pages', ({ data }) => !data.draft))
               <a href="/">Home</a>
               <a href="/blog/">Blog</a>
               {sitePages.map((page) => (
-                <a href={\`/\${page.id.replace(/\\.md$/, '')}/\`}>{page.data.title}</a>
+                <a href={\`/\${page.id}/\`}>{page.data.title}</a>
               ))}
             </>
           )}
@@ -460,7 +462,7 @@ const posts = (await getCollection('blog', ({ data }) => !data.draft))
     {posts.length > 0 ? (
       <div class="post-list">
         {posts.map((post) => (
-          <a href={\`/blog/\${post.id.replace(/\\.md$/, '')}/\`} class="post-card">
+          <a href={\`/blog/\${post.id}/\`} class="post-card">
             <h3 class="post-card-title">{post.data.title}</h3>
             {post.data.description && <p class="post-card-excerpt">{post.data.description}</p>}
             <span class="post-card-date">{post.data.pubDate.toLocaleDateString('en-US', { year: 'numeric', month: 'long', day: 'numeric' })}</span>
@@ -596,7 +598,7 @@ const posts = (await getCollection('blog', ({ data }) => !data.draft))
   {posts.length > 0 ? (
     <div class="blog-post-list">
       {posts.map((post) => (
-        <a href={\`/blog/\${post.id.replace(/\\.md$/, '')}/\`} class="blog-card">
+        <a href={\`/blog/\${post.id}/\`} class="blog-card">
           <div class="blog-card-body">
             <h2 class="blog-card-title">{post.data.title}</h2>
             {post.data.description && <p class="blog-card-excerpt">{post.data.description}</p>}
@@ -710,7 +712,7 @@ import BlogPost from '../../layouts/BlogPost.astro';
 export async function getStaticPaths() {
   const posts = await getCollection('blog');
   return posts.map((post) => ({
-    params: { slug: post.id.replace(/\\.md$/, '') },
+    params: { slug: post.id },
     props: post,
   }));
 }
@@ -740,7 +742,7 @@ import PageLayout from '../layouts/PageLayout.astro';
 export async function getStaticPaths() {
   const pages = await getCollection('pages');
   return pages.map((page) => ({
-    params: { slug: page.id.replace(/\\.md$/, '') },
+    params: { slug: page.id },
     props: page,
   }));
 }

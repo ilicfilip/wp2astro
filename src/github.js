@@ -78,13 +78,50 @@ export async function createRepo(name) {
  * @param {string} repo Repo name.
  * @returns {Promise<{posts: Object[], pages: Object[], images: Object[], menu: Object|null}>}
  */
-export async function fetchContent(owner, repo) {
+/**
+ * Auto-detect the Astro project root within the repo.
+ * Returns '' for root-level Astro projects, or 'subdir/' for nested ones.
+ * Looks for astro.config.mjs/ts at root, then checks subdirectories.
+ */
+export async function detectContentRoot(owner, repo) {
+  // Check if astro.config exists at root
+  for (const name of ['astro.config.mjs', 'astro.config.ts']) {
+    try {
+      await octokit.rest.repos.getContent({ owner, repo, path: name });
+      return ''; // Astro project at root
+    } catch (e) {
+      if (e.status !== 404) throw e;
+    }
+  }
+
+  // List root directory and check subdirectories for astro.config
+  try {
+    const { data: rootEntries } = await octokit.rest.repos.getContent({ owner, repo, path: '' });
+    for (const entry of rootEntries) {
+      if (entry.type !== 'dir') continue;
+      for (const name of ['astro.config.mjs', 'astro.config.ts']) {
+        try {
+          await octokit.rest.repos.getContent({ owner, repo, path: `${entry.name}/${name}` });
+          return `${entry.name}/`; // Found Astro project in subdirectory
+        } catch (e) {
+          if (e.status !== 404) throw e;
+        }
+      }
+    }
+  } catch (e) {
+    // Couldn't list root — fall back to default
+  }
+
+  return ''; // Default: assume root
+}
+
+export async function fetchContent(owner, repo, contentRoot = '') {
   const result = { posts: [], pages: [], images: [], menu: null };
 
   // Fetch blog posts
   try {
     const { data: blogFiles } = await octokit.rest.repos.getContent({
-      owner, repo, path: 'src/content/blog',
+      owner, repo, path: `${contentRoot}src/content/blog`,
     });
     for (const file of blogFiles) {
       if (file.name.endsWith('.md')) {
@@ -102,7 +139,7 @@ export async function fetchContent(owner, repo) {
   // Fetch pages
   try {
     const { data: pageFiles } = await octokit.rest.repos.getContent({
-      owner, repo, path: 'src/content/pages',
+      owner, repo, path: `${contentRoot}src/content/pages`,
     });
     for (const file of pageFiles) {
       if (file.name.endsWith('.md')) {
@@ -119,7 +156,7 @@ export async function fetchContent(owner, repo) {
   // Fetch images with binary content (base64)
   try {
     const { data: imgFiles } = await octokit.rest.repos.getContent({
-      owner, repo, path: 'public/assets/images',
+      owner, repo, path: `${contentRoot}public/assets/images`,
     });
     for (const file of imgFiles) {
       if (file.type !== 'file' || file.name === '.gitkeep') continue;
@@ -139,7 +176,7 @@ export async function fetchContent(owner, repo) {
 
   try {
     const { data } = await octokit.rest.repos.getContent({
-      owner, repo, path: 'src/data/menu.json',
+      owner, repo, path: `${contentRoot}src/data/menu.json`,
     });
     if (data.type === 'file' && data.content) {
       const binary = atob(data.content.replace(/\n/g, ''));
@@ -159,10 +196,10 @@ export async function fetchContent(owner, repo) {
  * Fetch the template version from the repo's .astro-wp-version file.
  * Returns { template, version } or { template: 'default', version: 0 } if missing.
  */
-export async function fetchTemplateVersion(owner, repo) {
+export async function fetchTemplateVersion(owner, repo, contentRoot = '') {
   try {
     const { data } = await octokit.rest.repos.getContent({
-      owner, repo, path: '.astro-wp-version',
+      owner, repo, path: `${contentRoot}.astro-wp-version`,
     });
     const content = JSON.parse(atob(data.content));
     return { template: content.template || 'default', version: content.version || 0 };

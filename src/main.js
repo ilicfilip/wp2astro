@@ -257,37 +257,51 @@ launchBtn.addEventListener('click', async () => {
 async function bootEditor() {
   setLoading('Fetching content from GitHub...');
 
-  // 1. Fetch existing content from the repo
+  // 1. Detect content root (e.g. '' for root or 'src-astro/' for nested projects)
+  let contentRoot = '';
+  try {
+    contentRoot = await github.detectContentRoot(selectedRepo.owner, selectedRepo.name);
+  } catch (e) {
+    // Default to root
+  }
+
   let existingContent;
   try {
-    existingContent = await github.fetchContent(selectedRepo.owner, selectedRepo.name);
+    existingContent = await github.fetchContent(selectedRepo.owner, selectedRepo.name, contentRoot);
   } catch (e) {
     existingContent = { posts: [], pages: [], images: [], menu: null };
   }
 
   // Seed the content manifest from repo so deletions can be detected on first sync
   for (const post of existingContent.posts) {
-    contentManifest[`src/content/blog/${post.name}`] = post.sha;
+    contentManifest[`${contentRoot}src/content/blog/${post.name}`] = post.sha;
   }
   for (const page of existingContent.pages) {
-    contentManifest[`src/content/pages/${page.name}`] = page.sha;
+    contentManifest[`${contentRoot}src/content/pages/${page.name}`] = page.sha;
   }
   for (const img of existingContent.images) {
-    contentManifest[`public/assets/images/${img.name}`] = img.sha;
+    contentManifest[`${contentRoot}public/assets/images/${img.name}`] = img.sha;
   }
   if (existingContent.menu) {
-    contentManifest['src/data/menu.json'] = existingContent.menu.sha;
+    contentManifest[`${contentRoot}src/data/menu.json`] = existingContent.menu.sha;
   }
   // Check template version for update detection
   let repoTemplate;
   try {
-    repoTemplate = await github.fetchTemplateVersion(selectedRepo.owner, selectedRepo.name);
+    repoTemplate = await github.fetchTemplateVersion(selectedRepo.owner, selectedRepo.name, contentRoot);
   } catch (e) {
     repoTemplate = { template: 'default', version: 0 };
   }
   contentManifest._templateVersion = repoTemplate.version;
   contentManifest._templateName = repoTemplate.template;
   contentManifest._templatePushed = true; // repo already has templates if content exists
+
+  // Detect custom repos: has content but no .astro-wp-version → content-only sync
+  const hasExistingContent = existingContent.posts.length > 0
+    || existingContent.pages.length > 0
+    || existingContent.images.length > 0;
+  contentManifest._isCustomRepo = hasExistingContent && repoTemplate.version === 0;
+  contentManifest._contentRoot = contentRoot;
 
   // 2. Build blueprint with plugin files + existing content
   setLoading('Starting WordPress Playground...');
@@ -656,14 +670,16 @@ async function syncToGitHub() {
     const pages  = JSON.parse(pagesRes.text);
     const images = JSON.parse(imagesRes.text);
     const menuPayload = JSON.parse(menuRes.text);
-    const menuPath = 'src/data/menu.json';
+    const root = contentManifest._contentRoot || '';
+    const menuPath = `${root}src/data/menu.json`;
     const menuJson = JSON.stringify({ locations: menuPayload.locations }, null, 2);
 
     // 2. Ensure template/scaffold files exist in the repo (first sync or version update).
     const files = {};
     let changeCount = 0;
-    const needsTemplateUpdate = !contentManifest._templatePushed
-      || contentManifest._templateVersion < TEMPLATE_VERSION;
+    const needsTemplateUpdate = !contentManifest._isCustomRepo
+      && (!contentManifest._templatePushed
+        || contentManifest._templateVersion < TEMPLATE_VERSION);
 
     if (needsTemplateUpdate) {
       const templateFiles = getTemplateFiles();
@@ -671,7 +687,7 @@ async function syncToGitHub() {
         // Skip empty .gitkeep files and the deploy workflow
         // (workflow requires PAT 'workflow' scope — pushed separately via CF setup)
         if (content !== '' && !path.startsWith('.github/')) {
-          files[path] = content;
+          files[`${root}${path}`] = content;
           changeCount++;
         }
       }
@@ -679,7 +695,7 @@ async function syncToGitHub() {
     }
 
     for (const post of posts) {
-      const path = `src/content/blog/${post.filename}`;
+      const path = `${root}src/content/blog/${post.filename}`;
       if (contentManifest[path] !== post.hash) {
         files[path] = post.markdown;
         changeCount++;
@@ -687,7 +703,7 @@ async function syncToGitHub() {
     }
 
     for (const page of pages) {
-      const path = `src/content/pages/${page.filename}`;
+      const path = `${root}src/content/pages/${page.filename}`;
       if (contentManifest[path] !== page.hash) {
         files[path] = page.markdown;
         changeCount++;
@@ -695,8 +711,9 @@ async function syncToGitHub() {
     }
 
     for (const img of images) {
-      if (contentManifest[img.path] !== img.hash) {
-        files[img.path] = `base64:${img.base64}`;
+      const path = `${root}${img.path}`;
+      if (contentManifest[path] !== img.hash) {
+        files[path] = `base64:${img.base64}`;
         changeCount++;
       }
     }
@@ -706,21 +723,28 @@ async function syncToGitHub() {
       changeCount++;
     }
 
-    // 2b. Detect deleted content (in manifest but no longer in WP)
+    // 2b. Clean up stale template files from previous versions
     const deletePaths = [];
-    const currentPosts = new Set(posts.map(p => `src/content/blog/${p.filename}`));
-    const currentPages = new Set(pages.map(p => `src/content/pages/${p.filename}`));
-    const currentImages = new Set(images.map(i => i.path));
+    if (needsTemplateUpdate) {
+      // Astro 6 moved content config from src/content/config.ts to src/content.config.ts
+      deletePaths.push(`${root}src/content/config.ts`);
+      changeCount++;
+    }
+
+    // 2c. Detect deleted content (in manifest but no longer in WP)
+    const currentPosts = new Set(posts.map(p => `${root}src/content/blog/${p.filename}`));
+    const currentPages = new Set(pages.map(p => `${root}src/content/pages/${p.filename}`));
+    const currentImages = new Set(images.map(i => `${root}${i.path}`));
 
     for (const path of Object.keys(contentManifest)) {
       if (path.startsWith('_')) continue; // skip internal flags like _templatePushed
-      if (path.startsWith('src/content/blog/') && !currentPosts.has(path)) {
+      if (path.startsWith(`${root}src/content/blog/`) && !currentPosts.has(path)) {
         deletePaths.push(path);
         changeCount++;
-      } else if (path.startsWith('src/content/pages/') && !currentPages.has(path)) {
+      } else if (path.startsWith(`${root}src/content/pages/`) && !currentPages.has(path)) {
         deletePaths.push(path);
         changeCount++;
-      } else if (path.startsWith('public/assets/images/') && !currentImages.has(path)) {
+      } else if (path.startsWith(`${root}public/assets/images/`) && !currentImages.has(path)) {
         deletePaths.push(path);
         changeCount++;
       }
@@ -753,13 +777,13 @@ async function syncToGitHub() {
 
     // 5. Update local manifest
     for (const post of posts) {
-      contentManifest[`src/content/blog/${post.filename}`] = post.hash;
+      contentManifest[`${root}src/content/blog/${post.filename}`] = post.hash;
     }
     for (const page of pages) {
-      contentManifest[`src/content/pages/${page.filename}`] = page.hash;
+      contentManifest[`${root}src/content/pages/${page.filename}`] = page.hash;
     }
     for (const img of images) {
-      contentManifest[img.path] = img.hash;
+      contentManifest[`${root}${img.path}`] = img.hash;
     }
     contentManifest[menuPath] = menuPayload.hash;
     // Remove deleted paths from manifest
